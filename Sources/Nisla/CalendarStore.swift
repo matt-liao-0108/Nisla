@@ -67,6 +67,7 @@ enum AgendaRules {
     @Published private(set) var eventAccess = EKEventStore.authorizationStatus(for: .event)
     @Published private(set) var reminderAccess = EKEventStore.authorizationStatus(for: .reminder)
     @Published private(set) var loading = false
+    @Published private(set) var authorizationInProgress = false
     @Published var error: String?
     @Published var selectedDate = Date()
     private let eventStore = EKEventStore()
@@ -86,11 +87,15 @@ enum AgendaRules {
     var hasReminders: Bool { reminderAccess == .fullAccess }
 
     func authorize(reminders: Bool) async {
+        guard !authorizationInProgress else { return }
         guard Bundle.main.bundleURL.pathExtension == "app" else {
             error = "请运行打包后的 Nisla.app，再授权日历与提醒事项；swift run 不带权限用途说明。"
             return
         }
         error = nil
+        let status = EKEventStore.authorizationStatus(for: reminders ? .reminder : .event)
+        if status == .notDetermined { authorizationInProgress = true }
+        defer { authorizationInProgress = false }
         do {
             let granted: Bool
             if reminders { granted = try await eventStore.requestFullAccessToReminders() }

@@ -19,7 +19,7 @@ enum ShelfMaterialMode: Equatable {
 /// the color; progressively less black reveals it toward the lower edge.
 enum ShelfGlassProfile {
     static let veil: [(location: Double, opacity: Double)] = [
-        (0, 1), (0.24, 0.95), (0.50, 0.78), (0.70, 0.48), (1, 0.38)
+        (0, 1), (0.24, 0.95), (0.50, 0.78), (0.70, 0.50), (1, 0.42)
     ]
     static func dimming(reveal: Double) -> [(location: Double, opacity: Double)] {
         let cover = ShelfMaterialMode.blackCover(reveal: reveal)
@@ -36,7 +36,7 @@ enum ShelfGlassProfile {
         let rimStart = max(0.92, 1 - 1.5 / max(1, height))
         var stops = dimming(reveal: reveal).filter { $0.location < rimStart }
         let cover = ShelfMaterialMode.blackCover(reveal: reveal)
-        stops.append((rimStart, cover + (1 - cover) * 0.38))
+        stops.append((rimStart, cover + (1 - cover) * 0.42))
         stops.append((1, cover + (1 - cover) * 0.84))
         return stops
     }

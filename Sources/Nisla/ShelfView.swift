@@ -183,14 +183,15 @@ struct ShelfView: View {
             if !Task.isCancelled { store.feedback = nil }
         }
         .onHover { inside in
-            guard headphones.reading == nil else { collapseTask?.cancel(); return }
+            guard headphones.reading == nil, !CalendarStore.shared.authorizationInProgress else { collapseTask?.cancel(); return }
             withAnimation(.easeOut(duration: 0.16)) { isHovering = inside }
             collapseTask?.cancel()
             if !inside && !layout.anchorHovered { suppressHoverUntilExit = false }
             if inside && !isTargeted && !store.isExpanded && !suppressHoverUntilExit && hud.reading == nil {
                 collapseTask = Task { @MainActor in
                     try? await Task.sleep(for: .seconds(store.options.hoverDelay))
-                    guard !Task.isCancelled, !isTargeted, hud.reading == nil, headphones.reading == nil else { return }
+                    guard !Task.isCancelled, !isTargeted, hud.reading == nil, headphones.reading == nil,
+                          !CalendarStore.shared.authorizationInProgress else { return }
                     store.isExpanded = true
                 }
             }

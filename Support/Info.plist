@@ -9,8 +9,8 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
-<key>CFBundleShortVersionString</key><string>0.2.52</string>
-<key>CFBundleVersion</key><string>54</string>
+<key>CFBundleShortVersionString</key><string>0.2.54</string>
+<key>CFBundleVersion</key><string>56</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSAppleEventsUsageDescription</key><string>Nisla 需要向 Apple Music 或 Spotify 读取当前播放信息，并在你点击控制按钮时执行播放、暂停和切歌。</string>

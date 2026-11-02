@@ -10,8 +10,8 @@ import AppKit
             backdrop.layoutSubtreeIfNeeded()
             precondition(backdrop.glass.style == .clear && backdrop.glass.tintColor == nil)
             precondition(backdrop.glass.contentView != nil)
-            precondition(backdrop.glass.cornerRadius == 22 && backdrop.glass.frame.minY == -22)
-            precondition(backdrop.glass.frame.minX == 12 && backdrop.glass.frame.width == 556,
+            precondition(backdrop.glass.cornerRadius == 10 && backdrop.glass.frame.minY == -10)
+            precondition(backdrop.glass.frame.minX == 10 && backdrop.glass.frame.width == 560,
                 "Optical sides must match NotchOutline, not be clipped off outside its shoulders")
             let veil = backdrop.coating
             precondition(backdrop.subviews.last === veil && veil !== backdrop.glass.contentView,
@@ -47,7 +47,7 @@ import AppKit
         precondition(ShelfMaterialMode.blackCover(reveal: 1) == 0)
         let veil = ShelfGlassProfile.veil
         precondition(veil.first?.location == 0 && veil.first?.opacity == 1)
-        precondition(veil.last?.location == 1 && veil.last!.opacity == 0.38)
+        precondition(veil.last?.location == 1 && veil.last!.opacity == 0.42)
         for (upper, lower) in zip(veil, veil.dropFirst()) {
             precondition(upper.location < lower.location && upper.opacity > lower.opacity)
             precondition((0...1).contains(lower.location) && (0...1).contains(lower.opacity))
@@ -60,13 +60,13 @@ import AppKit
         // backdrop it must preserve far more color at the foot than at the top.
         let upperTransmission = 1 - veil[1].opacity
         let lowerTransmission = 1 - veil.last!.opacity
-        precondition(upperTransmission < 0.051 && abs(lowerTransmission - 0.62) < 0.0001)
+        precondition(upperTransmission < 0.051 && abs(lowerTransmission - 0.58) < 0.0001)
         precondition(lowerTransmission > upperTransmission * 10)
         for height: CGFloat in [32, 128, 186, 234, 420] {
             let coating = ShelfGlassProfile.coating(reveal: 1, height: height, capsule: false)
             for (a, b) in zip(coating, coating.dropFirst()) { precondition(a.location < b.location) }
-            precondition(coating.allSatisfy { $0.opacity >= 0.38 && $0.opacity <= 1 })
-            precondition(abs(coating[coating.count - 2].opacity - 0.38) < 0.0001)
+            precondition(coating.allSatisfy { $0.opacity >= 0.42 && $0.opacity <= 1 })
+            precondition(abs(coating[coating.count - 2].opacity - 0.42) < 0.0001)
             precondition(height * (1 - coating[coating.count - 2].location) <= 1.5001,
                 "Rim darkening must stay within 1.5 pt, not create a black band below the content")
             precondition(255 * (1 - coating.last!.opacity) < 42,

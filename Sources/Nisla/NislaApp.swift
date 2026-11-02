@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var headphoneTemporarilyRevealed: IslandPanel?
     private var lastHeadphoneID: String?
     private var capturingSelection = false
+    private var restoreExpandedAfterAuthorization = false
     private let menuBarMonitor = MenuBarMonitor()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -59,6 +60,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.setActivationPolicy(.accessory)
         rebuildPanels()
+        CalendarStore.shared.$authorizationInProgress.sink { [weak self] requesting in
+            guard let self else { return }
+            if requesting {
+                self.restoreExpandedAfterAuthorization = self.store.isExpanded
+                self.panels.forEach { $0.ignoresMouseEvents = true }
+                self.store.isExpanded = false
+            } else {
+                self.panels.forEach { $0.ignoresMouseEvents = false }
+                if self.restoreExpandedAfterAuthorization {
+                    self.restoreExpandedAfterAuthorization = false
+                    self.store.isExpanded = true
+                }
+            }
+        }.store(in: &cancellables)
         // Mouse movement only: no key events, event tap or permission prompt.
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             MainActor.assumeIsolated { self?.panels.forEach { $0.updateHoverAnchor() } }
@@ -302,6 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let targets = store.options.allDisplays ? screens : selected.map { [$0] } ?? []
         panels = targets.map { screen in
             let panel = IslandPanel(store: store, screen: screen)
+            panel.ignoresMouseEvents = CalendarStore.shared.authorizationInProgress
             panel.orderFrontRegardless()
             return panel
         }
