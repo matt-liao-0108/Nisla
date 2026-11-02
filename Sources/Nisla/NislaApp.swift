@@ -329,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = L10n.text("Nisla 设置")
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView().environmentObject(store))
+            SettingsWindowStyle.configure(window)
             window.center()
             settingsWindow = window
         }

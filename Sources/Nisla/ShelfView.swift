@@ -146,12 +146,16 @@ struct ShelfView: View {
                 // full-height frame here masked calendar day and month buttons.
                 VStack(spacing: 0) {
                     Spacer(minLength: 0).allowsHitTesting(false)
+                    // Do not rely on opacity to hide compositor-backed glass:
+                    // remove the footer before the native window collapses.
+                    if ShelfGeometry.showsFooter(expanded: store.isExpanded, reveal: reveal) {
                     ShelfTabBar()
                         .opacity(store.isExpanded ? max(0, (reveal - 0.6) / 0.4) : 0)
                         .offset(y: reduceMotion ? 0 : 5 * (1 - reveal))
                         .padding(.bottom, 1)
                         .allowsHitTesting(store.isExpanded && reveal > 0.95)
                         .accessibilityHidden(!store.isExpanded)
+                    }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
@@ -842,6 +846,11 @@ private struct CodexView: View {
                     Text(showAll ? L10n.text("最近会话") : L10n.text("已置顶会话")).font(.system(size: 12, weight: .semibold))
                 }
                 Spacer()
+                Menu {
+                    Toggle(L10n.text("显示内部会话"), isOn: $store.showInternalCodexSessions)
+                } label: {
+                    Image(systemName: store.showInternalCodexSessions ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }.menuStyle(.borderlessButton).fixedSize().help(L10n.text("默认仅显示主会话；可查看内部审查与子任务"))
                 Button(showAll ? L10n.text("返回置顶") : L10n.text("添加会话")) { store.showRecentSessions.toggle() }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                 Button { store.refreshCodex() } label: {
                     ZStack {
@@ -851,7 +860,7 @@ private struct CodexView: View {
                 }.buttonStyle(.plain).disabled(store.isRefreshing).help(L10n.text("刷新会话"))
             }
             if visibleSessions.isEmpty {
-                ContentUnavailableView(showAll ? L10n.text("未找到 Codex 会话") : L10n.text("还没有置顶会话"), systemImage: "sparkles", description: Text(L10n.text("点击“添加会话”，选择右侧图钉")))
+                ContentUnavailableView(showAll ? L10n.text("未找到 Codex 会话") : L10n.text("还没有置顶会话"), systemImage: "sparkles", description: Text(L10n.text("点击“添加会话”选择会话；筛选菜单可显示内部会话。")))
             } else {
                 ScrollView {
                     LazyVStack(spacing: ShelfGeometry.codexRowSpacing) {
@@ -869,6 +878,10 @@ private struct CodexView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(session.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
                                         HStack {
+                                            if let kind = session.internalKind {
+                                                Text(kind == .review ? L10n.text("内部审查") : L10n.text("子任务"))
+                                                    .foregroundStyle(.orange)
+                                            }
                                             if let activity = store.activities[session.id] {
                                                 Text(L10n.text(activity.phase.title)).foregroundStyle(statusColor(activity.phase))
                                                 if activity.phase == .running, let started = activity.startedAt { Text(started, style: .timer).monospacedDigit() }

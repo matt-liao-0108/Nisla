@@ -111,7 +111,7 @@ struct MusicDashboard: View {
             }
         } label: {
             Image(systemName: "list.bullet").font(.system(size: 15)).foregroundStyle(.white.opacity(0.35))
-                .frame(width: 30, height: 42)
+                .frame(width: 30, height: track == nil ? 28 : 42)
         }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L10n.text("选择跟随的播放器"))
             .accessibilityLabel(L10n.text("播放器来源"))
     }

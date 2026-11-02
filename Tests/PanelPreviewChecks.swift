@@ -68,6 +68,24 @@ import AppKit
         let shortGuidance = MusicDashboard(track: nil, enabled: true, busy: false,
             status: "请在 Apple Music、Spotify、网易云音乐或 QQ 音乐中播放歌曲。",
             remoteArtwork: false, selectedPlayer: .constant("auto"), command: { _ in }, open: { _ in }, enable: {}, refresh: {}, showProgress: .constant(false))
+        let shortText = "请在 Apple Music、Spotify、网易云音乐或 QQ 音乐中播放歌曲。"
+        precondition(MusicGuidanceLayout.lineCount(shortText, width: 352) == 1,
+            "Rounded text metrics must not count a single guidance line as two")
+        precondition(MusicGuidanceLayout.lineCount("第一行\n第二行", width: 352) == 2)
+        precondition(MusicGuidanceLayout.lineCount("第一行\n第二行\n第三行\n第四行", width: 352) == 3)
+        for width in [400, 440, 580, 960] {
+            for status in [shortText, "音乐功能未开启", "请先连接播放器，并确认系统控制中心能显示当前歌曲。\n如果尚未授权，请在系统设置中允许访问。\n完成后点击刷新。",
+                           "Play a song in Apple Music, Spotify, NetEase Cloud Music or QQ Music. Confirm that Now Playing in Control Center shows the player, then refresh."] {
+                for enabled in [false, true] {
+                    let dashboard = MusicDashboard(track: nil, enabled: enabled, busy: false, status: status,
+                        remoteArtwork: false, selectedPlayer: .constant("auto"), command: { _ in }, open: { _ in }, enable: {}, refresh: {}, showProgress: .constant(false))
+                    let lines = MusicGuidanceLayout.lineCount(L10n.text(status), width: CGFloat(width) - 2 * ShelfGeometry.expandedContentInset - 16)
+                    let height = ShelfGeometry.musicBodyHeight(hasTrack: false, showsProgress: false, guidanceLines: lines)
+                    try assertMusicFits(dashboard, width: width, bodyHeight: height)
+                }
+            }
+        }
+        print("PASS: music guidance counts actual lines; empty/disabled layouts fit at 400/440/580/960 pt without a large bottom reserve")
         for width in [440, 580] {
             let calendarHeight = Int(ShelfGeometry.calendarBodyHeight(weekRows: AgendaRules.monthCells(for: selection.date).count / 7))
             try snapshot(agenda, width: width, height: calendarHeight, destination: output.appendingPathComponent("calendar-\(width).png"))
@@ -157,6 +175,18 @@ import AppKit
                 destination: output.appendingPathComponent("floating-codex-\(width).png"))
         }
         print("PASS: native calendar/music, compact title and 0/1/2/4/6-row Codex layouts render with fixture data only")
+    }
+
+    @MainActor static func assertMusicFits<V: View>(_ view: V, width: Int, bodyHeight: CGFloat) throws {
+        let host = NSHostingView(rootView: view.padding(.horizontal, ShelfGeometry.expandedContentInset)
+            .padding(.vertical, 8).frame(width: CGFloat(width)).fixedSize(horizontal: false, vertical: true)
+            .environment(\.colorScheme, .dark))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 240), styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let intrinsicHeight = ceil(host.fittingSize.height)
+        precondition(intrinsicHeight <= bodyHeight, "Music content clipped: natural \(intrinsicHeight), body \(bodyHeight), width \(width)")
+        precondition(bodyHeight - intrinsicHeight <= 12, "Music left unused bottom space: natural \(intrinsicHeight), body \(bodyHeight), width \(width)")
     }
 
     @MainActor static func snapshot<V: View>(_ view: V, width: Int, height: Int, padded: Bool = true, destination: URL) throws {

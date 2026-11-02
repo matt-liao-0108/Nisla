@@ -27,6 +27,7 @@ final class PinStore: ObservableObject {
     }
     private(set) var previousTab = 0
     @Published var showRecentSessions = false
+    @Published var showInternalCodexSessions = false
     @Published var isExpanded = false {
         didSet { if !isExpanded { restoreDropPresentation() } }
     }
@@ -124,8 +125,23 @@ final class PinStore: ObservableObject {
         return ShelfGeometry.codexBodyHeight(sessionCount: visibleCodexSessions.count)
     }
     var visibleCodexSessions: [CodexSession] {
-        if showRecentSessions { return connectedCodexSessions.isEmpty ? codexSessions : connectedCodexSessions }
-        return pinnedSessions.map { pin in codexSessions.first(where: { $0.id == pin.id }) ?? pin }
+        let sessions: [CodexSession]
+        if showRecentSessions {
+            sessions = (connectedCodexSessions.isEmpty ? codexSessions : connectedCodexSessions)
+                .map { SessionProvenance.enriched($0, local: codexSessions) }
+        } else {
+            sessions = pinnedSessions.map { pin in
+                SessionProvenance.enriched(codexSessions.first(where: { $0.id == pin.id })
+                    ?? connectedCodexSessions.first(where: { $0.id == pin.id }) ?? pin, local: codexSessions)
+            }
+        }
+        let visible = sessions.filter { showInternalCodexSessions || $0.internalKind == nil }
+        if showRecentSessions && !showInternalCodexSessions && !connectedCodexSessions.isEmpty && visible.isEmpty {
+            // A server's recent-page limit can be filled entirely by subagents.
+            // Do not turn that into a false "no conversations" state.
+            return codexSessions.filter { $0.internalKind == nil }
+        }
+        return visible
     }
     var shelfHeight: CGFloat { headerHeight + (isExpanded ? bodyHeight + ShelfGeometry.footerHeight : 0) }
     @Published var isRefreshing = false
@@ -346,9 +362,8 @@ final class PinStore: ObservableObject {
         }
     }
 
-    nonisolated private static func scanCodex(retaining: Set<String> = []) -> [CodexSession] {
+    nonisolated static func scanCodex(retaining: Set<String> = [], home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [CodexSession] {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
         var titles: [String: String] = [:]
         if let index = try? String(contentsOf: home.appendingPathComponent(".codex/session_index.jsonl"), encoding: .utf8) {
             for line in index.split(separator: "\n") {
@@ -369,14 +384,19 @@ final class PinStore: ObservableObject {
         }
         var found: [CodexSession] = []
         var seen = Set<String>()
+        var mainCount = 0, internalCount = 0
         for (index, entry) in candidates.sorted(by: { $0.1 > $1.1 }).enumerated() {
                 let (url, date) = entry
                 let id = url.deletingPathExtension().lastPathComponent
                 let parts = id.split(separator: "-")
                 let compactID = parts.count > 4 ? parts.suffix(5).joined(separator: "-") : id
-                guard index < 100 || retaining.contains(compactID) else { continue }
+                guard index < 1000 || retaining.contains(compactID) else { continue }
                 guard seen.insert(compactID).inserted else { continue }
-                found.append(CodexSession(id: compactID, title: titles[compactID] ?? sessionTitle(from: url) ?? "会话 \(compactID.prefix(8))", project: "本机会话", modifiedAt: date, isRunning: false, sourcePath: url.path))
+                let provenance = SessionProvenance.read(url)
+                let internalSession = provenance.kind != nil
+                guard (internalSession ? internalCount : mainCount) < 100 || retaining.contains(compactID) else { continue }
+                if internalSession { internalCount += 1 } else { mainCount += 1 }
+                found.append(CodexSession(id: compactID, title: titles[compactID] ?? sessionTitle(from: url) ?? "会话 \(compactID.prefix(8))", project: "本机会话", modifiedAt: date, isRunning: false, sourcePath: url.path, internalKind: provenance.kind, parentThreadID: provenance.parent))
         }
         return found
     }

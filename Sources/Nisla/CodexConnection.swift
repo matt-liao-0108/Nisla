@@ -2,6 +2,56 @@ import Foundation
 import SwiftUI
 import AppKit
 
+enum CodexStartupFailure: Equatable {
+    case unavailableSocket, unsupportedProxy, unsupportedServer, permission, configuration, unknown
+    static func classify(_ data: Data) -> Self {
+        let text = String(decoding: data, as: UTF8.self).lowercased()
+        if text.contains("socket") && ["no such file", "connection refused", "os error 2", "os error 61"].contains(where: text.contains) { return .unavailableSocket }
+        if text.contains("proxy") && ["unrecognized subcommand", "unknown subcommand", "unexpected argument"].contains(where: text.contains) { return .unsupportedProxy }
+        if text.contains("app-server") && ["unrecognized subcommand", "unknown subcommand"].contains(where: text.contains) { return .unsupportedServer }
+        if ["failed to load config", "error loading config", "error parsing config", "toml parse error"].contains(where: text.contains) { return .configuration }
+        if ["permission denied", "operation not permitted", "os error 13"].contains(where: text.contains) { return .permission }
+        return .unknown
+    }
+    var message: String {
+        switch self {
+        case .unavailableSocket: "共享服务的控制 Socket 不存在或未监听。请启动提供共享服务的 Codex，或检查自定义 Socket 路径；也可手动切换独立服务。"
+        case .unsupportedProxy: "此 Codex CLI 不支持共享服务代理。可更新 CLI，或手动切换独立服务。"
+        case .unsupportedServer: "此可执行文件不支持 Codex app-server，请选择支持本地服务的 Codex CLI。"
+        case .permission: "连接进程访问本地文件或 Socket 被拒绝。请检查文件权限；这不是辅助功能授权问题。"
+        case .configuration: "Codex 本地配置无法加载。请检查所选 CLI 的配置格式与版本兼容性。"
+        case .unknown: "连接进程未能完成启动。请核对 CLI 路径、版本和连接模式；未自动切换服务。"
+        }
+    }
+}
+
+/// Temporary bounded capture, never persisted or copied into exported logs.
+final class CodexStartupCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = Data()
+    func append(_ data: Data) {
+        lock.lock(); defer { lock.unlock() }
+        bytes.append(data)
+        if bytes.count > 65_536 { bytes = Data(bytes.suffix(65_536)) }
+    }
+    var failure: CodexStartupFailure {
+        lock.lock(); defer { lock.unlock() }
+        return CodexStartupFailure.classify(bytes)
+    }
+}
+
+enum CodexLaunch {
+    static func path(_ value: String) -> String {
+        (value.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+    }
+    static func arguments(mode: String, socket: String) -> [String] {
+        // Stdio is the documented default. --stdio is not supported by all CLIs.
+        if mode == "direct" { return ["app-server"] }
+        let socket = path(socket)
+        return ["app-server", "proxy"] + (socket.isEmpty ? [] : ["--sock", socket])
+    }
+}
+
 enum CodexExecutableLocator {
     static func resolve(configured: String, candidates: [String], executable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
         ([configured] + candidates).first(where: executable)
@@ -29,6 +79,15 @@ struct AgentRequest: Identifiable {
     }
 }
 
+struct CodexChatEntry: Identifiable, Equatable {
+    enum Role { case user, assistant }
+    enum State { case sending, waiting, streaming, complete, failed, interrupted }
+    let id = UUID()
+    let role: Role
+    var text: String
+    var state: State
+}
+
 @MainActor final class CodexConnection: ObservableObject {
     static let shared = CodexConnection()
     @Published var connected = false
@@ -38,13 +97,24 @@ struct AgentRequest: Identifiable {
     @Published var quota = "额度尚未读取"
     @Published var requests: [AgentRequest] = []
     @Published var messages: [String: String] = [:]
+    // Bounded, memory-only conversation history for messages seen by Nisla.
+    @Published private(set) var conversations: [String: [CodexChatEntry]] = [:]
+    private var conversationOrder: [String] = []
     @Published var activeTurns: [String: String] = [:]
+    @Published private(set) var stoppingThreads: Set<String> = []
+    @Published private(set) var stopErrors: [String: String] = [:]
+    @Published private(set) var sendingThreads: Set<String> = []
+    private var interruptingTurns: [String: String] = [:]
+    private var stopConfirmationTasks: [String: Task<Void, Never>] = [:]
+    private var completedTurnIDs: [String] = []
     @Published var threadErrors: [String: String] = [:]
     @Published var checkingThreads: Set<String> = []
     @Published var sending = false
     @Published var lastSendSucceeded = false
     @Published var lastSentThreadID: String?
     @Published var lastSentText: String?
+    @Published private(set) var connecting = false
+    @Published private(set) var canOfferDirectConnection = false
     @AppStorage("codexExecutable") var executable = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
     @AppStorage("codexSocket") var socket = ""
     @AppStorage("codexTransport") var transport = "proxy"
@@ -56,10 +126,16 @@ struct AgentRequest: Identifiable {
     private var sequence = 0
     private var replies: [Int: (Result<[String: Any], Error>) -> Void] = [:]
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
-    private var connecting = false
     private var generation = UUID()
     private let executableOverride: String?
-    init(executableOverride: String? = nil) { self.executableOverride = executableOverride }
+    init(executableOverride: String? = nil, preferences: UserDefaults? = nil) {
+        self.executableOverride = executableOverride
+        if let preferences {
+            _executable = AppStorage(wrappedValue: "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex", "codexExecutable", store: preferences)
+            _socket = AppStorage(wrappedValue: "", "codexSocket", store: preferences)
+            _transport = AppStorage(wrappedValue: "proxy", "codexTransport", store: preferences)
+        }
+    }
 
     struct Failure: LocalizedError {
         let message: String
@@ -68,6 +144,8 @@ struct AgentRequest: Identifiable {
 
     func connect() {
         disconnect()
+        canOfferDirectConnection = false
+        if executableOverride == nil { self.executable = CodexLaunch.path(self.executable) }
         if executableOverride == nil, !FileManager.default.isExecutableFile(atPath: self.executable),
            let resolved = CodexExecutableLocator.resolve(configured: self.executable, candidates: CodexExecutableLocator.installedCandidates) {
             self.executable = resolved
@@ -78,9 +156,11 @@ struct AgentRequest: Identifiable {
         status = "正在连接 Codex 本地服务…"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = transport == "direct" ? ["app-server", "--stdio"] : ["app-server", "proxy"] + (socket.isEmpty ? [] : ["--sock", socket])
+        let mode = transport
+        process.arguments = CodexLaunch.arguments(mode: mode, socket: socket)
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         let generation = self.generation
+        let startup = CodexStartupCapture()
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = stderr
         input = stdin.fileHandleForWriting
         output = stdout.fileHandleForReading
@@ -93,21 +173,22 @@ struct AgentRequest: Identifiable {
                 self?.receive(data)
             }
         }
-        stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stderr.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            Task { @MainActor in
-                guard self?.generation == generation else { return }
-                // Do not retain environment paths, tokens, or server stderr in diagnostics.
-                self?.record("Codex 服务返回了诊断输出（\(data.count) 字节）；请检查服务是否运行及 Socket 配置。")
-            }
+            startup.append(data)
         }
         process.terminationHandler = { [weak self] process in
             let code = process.terminationStatus
             Task { @MainActor in
+                // Allow the final stderr callback to arrive before classification.
+                try? await Task.sleep(for: .milliseconds(50))
                 guard self?.process === process else { return }
+                let reason = startup.failure
                 self?.disconnect()
-                self?.fail("连接进程退出（\(code)）。请启动支持本地服务的 Codex，或配置其控制 Socket。")
+                self?.canOfferDirectConnection = mode != "direct" && [.unavailableSocket, .unsupportedProxy].contains(reason)
+                self?.record("连接进程退出（\(code)）")
+                self?.fail(reason.message)
             }
         }
         self.process = process
@@ -115,23 +196,51 @@ struct AgentRequest: Identifiable {
         catch { disconnect(); fail("无法启动连接进程：\(error.localizedDescription)"); return }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
         request("initialize", parameters: ["clientInfo": ["name": "nisla", "title": "Nisla", "version": version]]) { [weak self] result in
-            guard let self else { return }
+            guard let self, self.generation == generation else { return }
             switch result {
             case .success:
                 guard self.write(["method": "initialized", "params": [:]]) else {
                     self.disconnect(); self.fail("初始化确认发送失败，请重新连接"); return
                 }
-                self.connected = true; self.connecting = false; self.status = "已连接 Codex 本地服务"
+                self.connected = true; self.connecting = false
+                self.status = mode == "direct" ? "已连接独立 Codex 服务（非桌面共享连接）" : "已连接 Codex 本地服务"
                 self.record("initialize 握手成功")
                 self.refresh()
-            case .failure(let error): self.disconnect(); self.fail(error.localizedDescription)
+            case .failure(let error):
+                if error.localizedDescription == "连接写入失败，请重新连接" {
+                    // A process may exit before the first write. Let its stderr
+                    // classification win, rather than hiding the startup cause.
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        guard let self, self.process === process, self.generation == generation else { return }
+                        let reason = startup.failure
+                        self.disconnect()
+                        self.canOfferDirectConnection = mode != "direct" && [.unavailableSocket, .unsupportedProxy].contains(reason)
+                        self.fail(reason.message)
+                    }
+                } else { self.disconnect(); self.fail(error.localizedDescription) }
             }
         }
+    }
+
+    /// Only called by an explicit recovery button, never on connection failure.
+    func connectIndependently() {
+        guard canOfferDirectConnection, !connecting else { return }
+        transport = "direct"
+        connect()
     }
 
     func disconnect() {
         generation = UUID()
         connected = false; connecting = false; sending = false
+        for thread in Array(conversations.keys) {
+            for index in conversations[thread]!.indices {
+                if [.sending, .waiting, .streaming].contains(conversations[thread]![index].state) {
+                    conversations[thread]![index].state = .interrupted
+                }
+            }
+        }
+        canOfferDirectConnection = false
         lastSendSucceeded = false; lastSentThreadID = nil; lastSentText = nil
         output?.readabilityHandler = nil; errors?.readabilityHandler = nil
         let running = process; process = nil
@@ -142,6 +251,9 @@ struct AgentRequest: Identifiable {
         let pending = Array(replies.values); replies.removeAll()
         pending.forEach { $0(.failure(Failure(message: "连接已断开"))) }
         requests.removeAll(); activeTurns.removeAll()
+        stopConfirmationTasks.values.forEach { $0.cancel() }; stopConfirmationTasks.removeAll()
+        stoppingThreads.removeAll(); interruptingTurns.removeAll(); stopErrors.removeAll(); sendingThreads.removeAll()
+        completedTurnIDs.removeAll()
         messages.removeAll(); sessions.removeAll()
         threadErrors.removeAll(); checkingThreads.removeAll()
         quota = "额度尚未读取"
@@ -154,7 +266,8 @@ struct AgentRequest: Identifiable {
             if case .success(let value) = result, let rows = value["data"] as? [[String: Any]] {
                 self?.sessions = rows.compactMap { row in
                     guard let id = row["id"] as? String else { return nil }
-                    return CodexSession(id: id, title: row["name"] as? String ?? row["preview"] as? String ?? "Codex 会话", project: row["cwd"] as? String ?? "", modifiedAt: Date(timeIntervalSince1970: row["updatedAt"] as? Double ?? 0), isRunning: false, sourcePath: row["path"] as? String)
+                    let provenance = SessionProvenance.classify(row)
+                    return CodexSession(id: id, title: row["name"] as? String ?? row["preview"] as? String ?? "Codex 会话", project: row["cwd"] as? String ?? "", modifiedAt: Date(timeIntervalSince1970: row["updatedAt"] as? Double ?? 0), isRunning: false, sourcePath: row["path"] as? String, internalKind: provenance.kind, parentThreadID: provenance.parent)
                 }
             } else if case .failure(let error) = result { self?.fail(error.localizedDescription) }
         }
@@ -167,7 +280,7 @@ struct AgentRequest: Identifiable {
     }
 
     func follow(_ id: String) {
-        guard connected, !checkingThreads.contains(id) else { return }
+        guard connected, !checkingThreads.contains(id), activeTurns[id] == nil, !sendingThreads.contains(id) else { return }
         checkingThreads.insert(id)
         request("thread/resume", parameters: ["threadId": id, "excludeTurns": true]) { [weak self] result in
             guard let self else { return }
@@ -190,17 +303,39 @@ struct AgentRequest: Identifiable {
     }
 
     func send(_ text: String, to threadID: String) {
-        guard connected, !sending, threadErrors[threadID] == nil, !checkingThreads.contains(threadID), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard connected, !sending, !stoppingThreads.contains(threadID), threadErrors[threadID] == nil, !checkingThreads.contains(threadID), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         sending = true; lastSendSucceeded = false
+        sendingThreads.insert(threadID)
+        stopErrors.removeValue(forKey: threadID)
+        if conversations[threadID, default: []].isEmpty, let previous = messages[threadID], !previous.isEmpty {
+            appendChat(CodexChatEntry(role: .assistant, text: previous, state: .complete), to: threadID)
+        }
+        finishAssistant(in: threadID, state: .complete)
+        let user = CodexChatEntry(role: .user, text: String(text.prefix(65_536)), state: .sending)
+        let assistant = CodexChatEntry(role: .assistant, text: "", state: .waiting)
+        appendChat(user, to: threadID)
+        appendChat(assistant, to: threadID)
         let input: [[String: Any]] = [["type": "text", "text": text]]
         let finish: (Result<[String: Any], Error>) -> Void = { [weak self] result in
             guard let self else { return }
-            self.sending = false
+            self.sending = false; self.sendingThreads.remove(threadID)
             switch result {
-            case .success:
+            case .success(let value):
+                // Capture the response too: turn/started may arrive later.
+                if let turn = value["turn"] as? [String: Any], let id = turn["id"] as? String,
+                   !self.completedTurnIDs.contains(id) {
+                    self.activeTurns[threadID] = id
+                }
+                self.updateChat(user.id, in: threadID, state: .complete)
                 self.lastSentThreadID = threadID; self.lastSentText = text
                 self.lastSendSucceeded = true; self.status = "消息已发送"; self.record("消息发送成功")
-            case .failure(let error): self.handleThreadError(error, id: threadID)
+                if self.stoppingThreads.contains(threadID) { self.interruptActiveTurn(threadID) }
+            case .failure(let error):
+                self.updateChat(user.id, in: threadID, state: .failed)
+                self.updateChat(assistant.id, in: threadID, state: .failed)
+                self.handleThreadError(error, id: threadID)
+                if self.activeTurns[threadID] == nil { self.stoppingThreads.remove(threadID) }
+                else if self.stoppingThreads.contains(threadID) { self.interruptActiveTurn(threadID) }
             }
         }
         if let turn = activeTurns[threadID] {
@@ -214,6 +349,72 @@ struct AgentRequest: Identifiable {
                 }
             }
         }
+    }
+
+    func canStop(_ threadID: String) -> Bool {
+        connected && (activeTurns[threadID] != nil || sendingThreads.contains(threadID))
+    }
+
+    /// A click may precede turn/start's response. Keep the intent until its ID arrives.
+    func stop(_ threadID: String) {
+        guard canStop(threadID), !stoppingThreads.contains(threadID) else { return }
+        stopErrors.removeValue(forKey: threadID)
+        stoppingThreads.insert(threadID)
+        interruptActiveTurn(threadID)
+    }
+
+    private func interruptActiveTurn(_ threadID: String) {
+        guard let turnID = activeTurns[threadID], interruptingTurns[threadID] == nil else { return }
+        interruptingTurns[threadID] = turnID
+        request("turn/interrupt", parameters: ["threadId": threadID, "turnId": turnID]) { [weak self] result in
+            guard let self, self.activeTurns[threadID] == turnID,
+                  self.interruptingTurns[threadID] == turnID else { return }
+            switch result {
+            case .failure:
+                self.interruptingTurns.removeValue(forKey: threadID)
+                self.stoppingThreads.remove(threadID)
+                self.stopErrors[threadID] = "停止请求失败，任务可能仍在运行。请重试或在 Codex 中停止。"
+            case .success:
+                // The RPC acknowledges cancellation, not completed cleanup.
+                self.stopConfirmationTasks[threadID] = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(10))
+                    guard !Task.isCancelled, let self, self.activeTurns[threadID] == turnID else { return }
+                    self.interruptingTurns.removeValue(forKey: threadID)
+                    self.stoppingThreads.remove(threadID)
+                    self.stopConfirmationTasks.removeValue(forKey: threadID)
+                    self.stopErrors[threadID] = "尚未收到停止确认，任务可能仍在运行。可重试停止。"
+                }
+            }
+        }
+    }
+
+    private func appendChat(_ entry: CodexChatEntry, to thread: String) {
+        conversationOrder.removeAll { $0 == thread }; conversationOrder.append(thread)
+        while conversationOrder.count > 16 { conversations.removeValue(forKey: conversationOrder.removeFirst()) }
+        conversations[thread, default: []].append(entry)
+        conversations[thread] = Array(conversations[thread]!.suffix(32))
+    }
+
+    private func updateChat(_ id: UUID, in thread: String, state: CodexChatEntry.State) {
+        guard let index = conversations[thread]?.firstIndex(where: { $0.id == id }) else { return }
+        conversations[thread]![index].state = state
+    }
+
+    private func finishAssistant(in thread: String, state: CodexChatEntry.State) {
+        guard let index = conversations[thread]?.lastIndex(where: {
+            $0.role == .assistant && [.waiting, .streaming].contains($0.state)
+        }) else { return }
+        conversations[thread]![index].state = state
+    }
+
+    private func appendAssistantDelta(_ delta: String, in thread: String) {
+        guard !delta.isEmpty else { return }
+        if conversations[thread]?.last?.role != .assistant || ![.waiting, .streaming].contains(conversations[thread]!.last!.state) {
+            appendChat(CodexChatEntry(role: .assistant, text: "", state: .streaming), to: thread)
+        }
+        let index = conversations[thread]!.count - 1
+        conversations[thread]![index].text = String((conversations[thread]![index].text + delta).suffix(65_536))
+        conversations[thread]![index].state = .streaming
     }
 
     func respond(_ request: AgentRequest, result: [String: Any]) {
@@ -269,12 +470,36 @@ struct AgentRequest: Identifiable {
             } else {
                 switch method {
                 case "item/agentMessage/delta":
-                    let text = messages[thread, default: ""] + (params["delta"] as? String ?? "")
+                    if let id = params["turnId"] as? String,
+                       completedTurnIDs.contains(id) || (activeTurns[thread] != nil && activeTurns[thread] != id) { continue }
+                    let delta = params["delta"] as? String ?? ""
+                    let text = messages[thread, default: ""] + delta
                     messages[thread] = String(text.suffix(65_536))
+                    appendAssistantDelta(delta, in: thread)
                 case "turn/started":
-                    activeTurns[thread] = (params["turn"] as? [String: Any])?["id"] as? String
+                    guard let id = (params["turn"] as? [String: Any])?["id"] as? String,
+                          !completedTurnIDs.contains(id) else { continue }
+                    activeTurns[thread] = id
                     messages[thread] = ""
-                case "turn/completed": activeTurns.removeValue(forKey: thread)
+                    if conversations[thread]?.last?.role != .assistant || ![.waiting, .streaming].contains(conversations[thread]!.last!.state) {
+                        appendChat(CodexChatEntry(role: .assistant, text: "", state: .waiting), to: thread)
+                    }
+                    if stoppingThreads.contains(thread) { interruptActiveTurn(thread) }
+                case "turn/completed":
+                    let turn = params["turn"] as? [String: Any]
+                    if let id = turn?["id"] as? String {
+                        guard !completedTurnIDs.contains(id) else { continue }
+                        completedTurnIDs.append(id); completedTurnIDs = Array(completedTurnIDs.suffix(128))
+                        if let active = activeTurns[thread], active != id { continue }
+                    }
+                    activeTurns.removeValue(forKey: thread)
+                    stoppingThreads.remove(thread); interruptingTurns.removeValue(forKey: thread)
+                    stopErrors.removeValue(forKey: thread)
+                    stopConfirmationTasks.removeValue(forKey: thread)?.cancel()
+                    requests.removeAll { $0.threadID == thread }
+                    let state: CodexChatEntry.State = turn?["status"] as? String == "failed" ? .failed
+                        : turn?["status"] as? String == "interrupted" ? .interrupted : .complete
+                    finishAssistant(in: thread, state: state)
                 case "account/rateLimits/updated": updateQuota(params)
                 case "serverRequest/resolved":
                     let id = String(describing: params["requestId"] ?? "")

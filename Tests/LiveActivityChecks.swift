@@ -4,6 +4,16 @@ import AppKit
 @main struct LiveActivityChecks {
     @MainActor static func main() throws {
         _ = NSApplication.shared
+        let marker = NSImage(size: NSSize(width: 23, height: 23))
+        var attempted: [String] = []
+        let icon = CodexIconResolver.image(in: [URL(fileURLWithPath: "/fixture/Codex.app"), URL(fileURLWithPath: "/fixture/ChatGPT.app")]) { url in
+            attempted.append(url.path)
+            return url.path == "/fixture/ChatGPT.app/Contents/Resources/icon-chatgpt.png" ? marker : nil
+        }
+        precondition(icon === marker)
+        precondition(!attempted.contains(where: { $0.contains("icon-codex") }), "The blue terminal asset must never replace the requested knot icon")
+        precondition(CodexIconResolver.image(in: [], load: { _ in marker }) == nil)
+        print("PASS: requested knot icon is resolved across installed app candidates, never the blue terminal asset")
         let folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/LiveActivityPreviews")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let song = MusicTrack(player: .netease, title: "Indeed", artist: "演示歌手", album: "演示数据", playing: true, duration: 180, position: 12, artworkURL: nil)

@@ -14,26 +14,30 @@ check() {
     swiftc -module-cache-path /private/tmp/island-swift-cache "$island_root"/Sources/Nisla/Localization*.swift "$@" -o "$island_checks/$island_name" || return $?
     "$island_checks/$island_name"
 }
-check Data "$island_root"/Sources/Nisla/{Models,ActivityReader,InlineTextEditor,Previews,PinStore}.swift "$island_root/Tests/NislaTests/Checks.swift"
+check Data "$island_root"/Sources/Nisla/{Models,SessionPresentation,ActivityReader,InlineTextEditor,Previews,PinStore}.swift "$island_root/Tests/NislaTests/Checks.swift"
 check Localization "$island_root/Tests/LocalizationChecks.swift"
+check Markdown "$island_root/Sources/Nisla/ConversationMarkdown.swift" "$island_root/Tests/MarkdownChecks.swift"
 check Music "$island_root"/Sources/Nisla/{MusicStore,NowPlayingBridge}.swift "$island_root/Tests/MusicChecks.swift"
-check Agent "$island_root"/Sources/Nisla/{Models,CodexConnection}.swift "$island_root/Tests/AgentChecks.swift"
+check Agent "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/AgentChecks.swift"
+check Interrupt "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/InterruptChecks.swift"
+check ConnectionRecovery "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/ConnectionRecoveryChecks.swift"
+check SessionPresentation "$island_root"/Sources/Nisla/{Models,SessionPresentation,ActivityReader,InlineTextEditor,Previews,PinStore}.swift "$island_root/Tests/SessionPresentationChecks.swift"
 check Calendar "$island_root/Sources/Nisla/CalendarStore.swift" "$island_root/Tests/CalendarChecks.swift"
 check Motion "$island_root/Sources/Nisla/IslandMotion.swift" "$island_root/Tests/MotionChecks.swift"
 check Material "$island_root/Sources/Nisla/ShelfMaterial.swift" "$island_root/Tests/MaterialChecks.swift"
 check MenuBar "$island_root"/Sources/Nisla/{MenuBarAvoidance,IslandMotion}.swift "$island_root/Tests/MenuBarAvoidanceChecks.swift"
 check AirDrop "$island_root/Sources/Nisla/AirDropSharing.swift" "$island_root/Tests/AirDropChecks.swift"
 check LiveActivity "$island_root"/Sources/Nisla/{MusicStore,NowPlayingBridge,LiveActivityView}.swift "$island_root/Tests/LiveActivityChecks.swift"
-for island_test in HUDChecks HeadphoneChecks ShelfCornerChecks PanelPreviewChecks; do
+for island_test in HUDChecks HeadphoneChecks ShelfCornerChecks PanelPreviewChecks SettingsNavigationChecks ConversationPreviewChecks; do
     check "$island_test" "${island_sources[@]}" "$island_root/Tests/$island_test.swift"
 done
-island_test_summary='all 15 regression suites'
+island_test_summary='all 21 regression suites'
 if check NativePanel -D ISLAND_PANEL_PREVIEW "${island_sources[@]}" "$island_root/Sources/Nisla/NislaApp.swift" "$island_root/Tests/PanelFrameChecks.swift"; then
     :
 else
     island_native_result=$?
     if [[ "$island_native_result" != 77 ]]; then exit "$island_native_result"; fi
-    island_test_summary='14 regression suites; native-panel suite skipped (no WindowServer display)'
+    island_test_summary='20 regression suites; native-panel suite skipped (no WindowServer display)'
 fi
 for island_script in "$island_root"/scripts/*.sh; do bash -n "$island_script"; done
 plutil -lint "$island_root/Support/Info.plist" "$island_root/Support/MediaRemoteAdapter-Info.plist"

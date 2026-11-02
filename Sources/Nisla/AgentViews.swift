@@ -8,16 +8,21 @@ struct AgentSettings: View {
         Form {
             Section(L10n.text("Codex 连接")) {
                 Text(L10n.text(connection.status)).font(.caption).textSelection(.enabled)
-                TextField(L10n.text("Codex 可执行文件路径"), text: $connection.executable)
+                TextField(L10n.text("Codex 可执行文件路径"), text: $connection.executable).disabled(connection.connecting)
                 Picker(L10n.text("连接模式"), selection: $connection.transport) {
                     Text(L10n.text("现有本地服务（共享活动）")).tag("proxy")
                     Text(L10n.text("独立 CLI 服务（继续已保存会话）")).tag("direct")
-                }
+                }.disabled(connection.connecting)
                 TextField(L10n.text("控制 Socket（留空使用 Codex 默认）"), text: $connection.socket)
+                    .disabled(connection.transport == "direct" || connection.connecting)
                 HStack {
-                    Button(L10n.text("连接 / 重连")) { connection.connect() }
-                    Button(L10n.text("断开")) { connection.disconnect() }.disabled(!connection.connected)
+                    Button(connection.connecting ? L10n.text("正在连接…") : L10n.text("连接 / 重连")) { connection.connect() }.disabled(connection.connecting)
+                    Button(L10n.text("断开")) { connection.disconnect() }.disabled(!connection.connected && !connection.connecting)
                     Button(L10n.text("刷新额度")) { connection.refresh() }.disabled(!connection.connected)
+                }
+                if connection.canOfferDirectConnection {
+                    Text(L10n.text("独立服务不会接管桌面 Codex 正在运行的任务，也不会自动发送消息。")).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("使用独立服务连接")) { connection.connectIndependently() }
                 }
                 Text(L10n.text("连接正在运行的 Codex 本地服务。握手成功后才启用回复、问答与支持的审批；不会自动启动模型任务。")).font(.caption).foregroundStyle(.secondary)
                 if connection.transport == "direct" {
@@ -89,21 +94,92 @@ struct AgentConversation: View {
     @ObservedObject var connection = CodexConnection.shared
     let session: CodexSession
     @State private var draft = ""
+    @State private var contentHeight: CGFloat = 60
+    @State private var showRawReview = false
+    private var message: String { connection.messages[session.id] ?? store.activities[session.id]?.message ?? L10n.text("暂无消息") }
+    private var isInternal: Bool { session.internalKind != nil }
+    private var isStopping: Bool { connection.stoppingThreads.contains(session.id) }
+    private var isRunning: Bool { connection.activeTurns[session.id] != nil }
+    private var canReply: Bool {
+        connection.threadErrors[session.id] == nil && !connection.checkingThreads.contains(session.id) && !isStopping
+    }
+    private var canSend: Bool { canReply && !connection.sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var phaseTitle: String? {
+        if isStopping { return "正在停止…" }
+        if connection.sendingThreads.contains(session.id) { return "发送中…" }
+        if isRunning { return "正在处理" }
+        if let last = connection.conversations[session.id]?.last, last.role == .assistant {
+            switch last.state {
+            case .interrupted: return "已中断"
+            case .complete: return "已完成"
+            case .failed: return "未收到回复"
+            default: break
+            }
+        }
+        return store.activities[session.id]?.phase.title
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(session.title).font(.headline).lineLimit(2)
-            if let activity = store.activities[session.id] { Text(L10n.text(activity.phase.title)).font(.caption).foregroundStyle(.secondary) }
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.title).font(.headline).lineLimit(2)
+                    if let phaseTitle { Text(L10n.text(phaseTitle)).font(.caption).foregroundStyle(.secondary) }
+                }
+                Spacer(minLength: 0)
+                if !isInternal && connection.canStop(session.id) {
+                    Button { connection.stop(session.id) } label: {
+                        Label(L10n.text(isStopping ? "正在停止…" : "停止"), systemImage: "stop.fill")
+                            .font(.system(size: 11, weight: .medium))
+                    }.disabled(isStopping)
+                    .accessibilityLabel(L10n.text("停止当前任务"))
+                }
+            }
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(connection.messages[session.id] ?? store.activities[session.id]?.message ?? L10n.text("暂无消息"))
-                        .font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                    ForEach(connection.requests.filter { $0.threadID == session.id }) { request in AgentRequestView(request: request) }
+                    if !isInternal, let entries = connection.conversations[session.id], !entries.isEmpty {
+                        ForEach(entries) { entry in CodexChatRow(entry: entry, project: session.project) }
+                    } else if let review = ReviewSummary.parse(message) {
+                        Text(L10n.text("审查结果（只读）")).font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Text(L10n.text(review.riskLabel))
+                            Text("·").foregroundStyle(.secondary)
+                            Text(L10n.text(review.outcomeLabel))
+                            Spacer()
+                        }.font(.system(size: 12, weight: .semibold))
+                        Text(L10n.text(review.authorizationLabel)).font(.caption).foregroundStyle(.secondary)
+                        Text(review.rationale).font(.system(size: 12)).textSelection(.enabled)
+                        DisclosureGroup(L10n.text("查看原始 JSON"), isExpanded: $showRawReview) {
+                            Text(message).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
+                        }
+                    } else {
+                        ConversationMarkdown(source: message, project: session.project).equatable()
+                    }
+                    if !isInternal {
+                        ForEach(connection.requests.filter { $0.threadID == session.id }) { request in AgentRequestView(request: request) }
+                    }
+                    Color.clear.frame(height: 1).id("conversation-bottom")
                 }
-            }.frame(height: store.activities[session.id]?.phase == .unknown && connection.messages[session.id] == nil ? 70 : 200)
+                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: ConversationContentHeight.self, value: geometry.size.height)
+                })
+            }.frame(height: min(220, max(30, contentHeight)))
+                .onPreferenceChange(ConversationContentHeight.self) { contentHeight = $0 }
+                .onAppear { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                .onChange(of: connection.conversations[session.id]?.last?.id) { _, _ in proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                .onChange(of: connection.conversations[session.id]?.last?.text.count) { _, _ in proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+            }
             if store.activities[session.id]?.phase == .unknown {
                 Button(L10n.text("重新查找会话记录")) { store.refreshCodex() }
             }
-            if connection.connected {
+            if isInternal {
+                Text(L10n.text("内部会话仅供查看，请在主会话中继续。")).font(.caption).foregroundStyle(.secondary)
+            } else if connection.connected {
+                if let error = connection.stopErrors[session.id] {
+                    Label(L10n.text(error), systemImage: "exclamationmark.circle")
+                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
                 if let error = connection.threadErrors[session.id] {
                     Label(L10n.text(error), systemImage: "info.circle")
                         .font(.caption).foregroundStyle(.orange)
@@ -112,29 +188,90 @@ struct AgentConversation: View {
                         .disabled(connection.checkingThreads.contains(session.id))
                 }
                 ReplyEditor(text: $draft,
-                            enabled: connection.threadErrors[session.id] == nil && !connection.checkingThreads.contains(session.id),
-                            canSend: !connection.sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                            enabled: canReply,
+                            canSend: canSend) {
                     connection.send(draft, to: session.id)
                 }
-                .frame(height: 70).clipShape(RoundedRectangle(cornerRadius: 8))
-                Text(connection.checkingThreads.contains(session.id) ? L10n.text("正在检查会话是否可回复…") : connection.threadErrors[session.id] == nil ? L10n.text(connection.status) : L10n.text("草稿保留，未发送"))
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                HStack {
-                    Text(L10n.text("回车发送 · Shift＋回车换行")).font(.system(size: 10)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(connection.sending ? L10n.text("发送中…") : L10n.text("发送")) { connection.send(draft, to: session.id) }
-                        .disabled(connection.sending || connection.threadErrors[session.id] != nil || connection.checkingThreads.contains(session.id) || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text(L10n.text(isRunning ? "补充指令…" : "回复 Codex…"))
+                            .font(.system(size: 12)).foregroundStyle(.tertiary)
+                            .padding(.horizontal, 12).padding(.vertical, 9).allowsHitTesting(false)
+                    }
                 }
-            } else { Text(L10n.text("在设置 → Agent 中连接 Codex，可在这里回复与处理支持的审批。")).font(.caption).foregroundStyle(.secondary) }
-            Button(L10n.text("在 Codex 中继续")) {
-                if let url = URL(string: "codex://threads/\(session.id)"), !NSWorkspace.shared.open(url) { store.notice = L10n.text("无法打开 Codex") }
+                HStack {
+                    Text(connection.checkingThreads.contains(session.id) ? L10n.text("正在检查会话是否可回复…") : L10n.text("回车发送 · Shift＋回车换行"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L10n.text(connection.sendingThreads.contains(session.id) ? "发送中…" : isRunning ? "追加" : "发送")) { connection.send(draft, to: session.id) }
+                        .disabled(!canSend)
+                }
+            } else {
+                Text(L10n.text(connection.status)).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(connection.connecting ? L10n.text("正在连接…") : L10n.text("连接 Codex")) { connection.connect() }.disabled(connection.connecting)
+                if connection.canOfferDirectConnection {
+                    Text(L10n.text("独立服务不会接管桌面 Codex 正在运行的任务，也不会自动发送消息。")).font(.caption).foregroundStyle(.secondary)
+                    Button(L10n.text("使用独立服务连接")) { connection.connectIndependently() }
+                }
+            }
+            if let threadID = isInternal ? session.parentThreadID : session.id {
+                Button(isInternal ? L10n.text("打开主会话") : L10n.text("在 Codex 中继续")) {
+                    if let url = URL(string: "codex://threads/\(threadID)"), !NSWorkspace.shared.open(url) { store.notice = L10n.text("无法打开 Codex") }
+                }.buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
             }
         }.padding(16).frame(width: 400).background(Color(white: 0.09)).preferredColorScheme(.dark)
-        .onAppear { connection.follow(session.id) }
-        .onChange(of: connection.connected) { _, connected in if connected { connection.follow(session.id) } }
+        .onAppear { if !isInternal { connection.follow(session.id) } }
+        .onChange(of: connection.connected) { _, connected in if connected && !isInternal { connection.follow(session.id) } }
         .onChange(of: connection.lastSendSucceeded) { _, success in
             if success && connection.lastSentThreadID == session.id && connection.lastSentText == draft { draft = "" }
         }
     }
+}
+
+struct CodexChatRow: View {
+    @ObservedObject private var localization = AppLocalization.shared
+    let entry: CodexChatEntry
+    var project = ""
+    private var status: String {
+        switch entry.state {
+        case .sending: "发送中…"
+        case .waiting: "等待 Codex 回复…"
+        case .streaming: "正在回复…"
+        case .complete: entry.role == .user ? "已发送" : "已完成"
+        case .failed: entry.role == .user ? "发送失败，草稿已保留" : "未收到回复"
+        case .interrupted: "连接或任务已中断"
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(entry.role == .user ? L10n.text("你") : "Codex").fontWeight(.semibold)
+                Spacer()
+                if [.sending, .waiting, .streaming].contains(entry.state) {
+                    ProgressView().controlSize(.mini)
+                }
+                if entry.state != .complete {
+                    Text(L10n.text(status)).foregroundStyle(entry.state == .failed ? Color.orange : .secondary)
+                }
+            }.font(.system(size: 10))
+            if !entry.text.isEmpty {
+                if entry.role == .assistant {
+                    ConversationMarkdown(source: entry.text, project: project).equatable()
+                } else {
+                    Text(entry.text).font(.system(size: 12)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if entry.state == .complete {
+                Text(L10n.text("本轮已结束，未返回文本。")).font(.caption).foregroundStyle(.secondary)
+            }
+        }.padding(10)
+        .background(entry.role == .user ? Color.mint.opacity(0.12) : Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private struct ConversationContentHeight: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

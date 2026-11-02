@@ -4,13 +4,17 @@ import AppKit
 @main
 struct Checks {
     @MainActor static func main() throws {
+        for reveal: CGFloat in [0, 0.2, 0.6, 0.9, 1] {
+            precondition(!ShelfGeometry.showsFooter(expanded: false, reveal: reveal))
+            precondition(ShelfGeometry.showsFooter(expanded: true, reveal: reveal) == (reveal > 0.6))
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("IslandChecks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let defaults = UserDefaults(suiteName: "IslandChecks-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: directory, preferences: defaults, interactive: false)
         store.selectedTab = 3
-        precondition(store.bodyHeight == 204)
+        precondition(store.bodyHeight == 188)
         store.musicHasTrack = true
         precondition(store.bodyHeight == 156)
         store.musicShowsProgress = true
@@ -18,11 +22,11 @@ struct Checks {
         store.selectedTab = 0; store.selectedTab = 3
         precondition(store.musicShowsProgress && store.bodyHeight == 198)
         store.musicHasTrack = false
-        precondition(store.bodyHeight == 204)
+        precondition(store.bodyHeight == 188)
         store.musicGuidanceLines = 1
-        precondition(store.bodyHeight == 176)
+        precondition(store.bodyHeight == 160)
         store.musicGuidanceLines = 2
-        precondition(store.bodyHeight == 190)
+        precondition(store.bodyHeight == 174)
         store.musicGuidanceLines = 3
         store.selectedTab = 2
         for (rows, height) in [(4, 154.0), (5, 175), (6, 196)] {

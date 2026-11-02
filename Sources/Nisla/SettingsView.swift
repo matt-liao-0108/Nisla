@@ -1,5 +1,44 @@
 import SwiftUI
 import ServiceManagement
+import AppKit
+
+enum SettingsTab: Int, CaseIterable, Identifiable {
+    case appearance, content, shortcuts, agent, calendar, music
+    static var allCases: [Self] { [.appearance, .content, .agent, .calendar, .music, .shortcuts] }
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .appearance: L10n.text("外观")
+        case .content: L10n.text("内容")
+        case .shortcuts: L10n.text("快捷键")
+        case .agent: "Agent"
+        case .calendar: L10n.text("日历")
+        case .music: L10n.text("音乐")
+        }
+    }
+}
+
+enum SettingsWindowStyle {
+    @MainActor static func configure(_ window: NSWindow) {
+        // This is a fixed-size utility window: don't show dead traffic lights.
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.standardWindowButton(.closeButton)?.isHidden = false
+    }
+}
+
+private struct SettingsWindowChrome: NSViewRepresentable {
+    final class Anchor: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { SettingsWindowStyle.configure(window) }
+        }
+    }
+    func makeNSView(context: Context) -> Anchor { Anchor() }
+    func updateNSView(_ view: Anchor, context: Context) {
+        if let window = view.window { SettingsWindowStyle.configure(window) }
+    }
+}
 
 struct SettingsView: View {
     @ObservedObject private var localization = AppLocalization.shared
@@ -7,8 +46,43 @@ struct SettingsView: View {
     @State private var launch = SMAppService.mainApp.status == .enabled
     @State private var clear = false
     @State private var history = false
+    @State private var selectedTab: SettingsTab
+
+    init(selectedTab: SettingsTab = .appearance) {
+        _selectedTab = State(initialValue: selectedTab)
+    }
+
     var body: some View {
-        TabView {
+        // Keep navigation in the content area: a system-managed TabView may
+        // move its entire toolbar item into the overflow menu on macOS.
+        VStack(spacing: 0) {
+            Picker("", selection: $selectedTab) {
+                ForEach(SettingsTab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented).labelsHidden().controlSize(.regular)
+            .accessibilityLabel(L10n.text("Nisla 设置"))
+            .padding(.horizontal, 20).padding(.vertical, 10)
+            Divider()
+            Group {
+                switch selectedTab {
+                case .appearance: appearanceSettings
+                case .content: contentSettings
+                case .shortcuts: shortcutSettings
+                case .agent: AgentSettings()
+                case .calendar: CalendarSettings()
+                case .music: MusicSettings()
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.frame(width: 620, height: 620)
+        .background { SettingsWindowChrome().allowsHitTesting(false).accessibilityHidden(true) }
+        .environment(\.locale, localization.locale)
+        .confirmationDialog(L10n.text("清空所有内容？"), isPresented: $clear) { Button(L10n.text("清空"), role: .destructive) { store.clearAll() } } message: { Text(L10n.text("无法撤销。原文件和 Agent 会话保留。")) }
+        .confirmationDialog(L10n.text("清空自动历史？"), isPresented: $history) { Button(L10n.text("清空"), role: .destructive) { store.clearHistory() } } message: { Text(L10n.text("收藏和手动添加内容保留。")) }
+    }
+
+    private var appearanceSettings: some View {
             Form {
                 Section(L10n.text("语言")) {
                     Picker(L10n.text("语言"), selection: $localization.selection) {
@@ -86,7 +160,10 @@ struct SettingsView: View {
                         catch { store.notice = error.localizedDescription }
                     }
                 if Bundle.main.bundleURL.pathExtension != "app" { Text(L10n.text("登录启动需使用打包后的 Nisla.app。")).font(.caption).foregroundStyle(.secondary) }
-            }.formStyle(.grouped).tabItem { Label(L10n.text("外观"), systemImage: "paintbrush") }
+            }.formStyle(.grouped)
+    }
+
+    private var contentSettings: some View {
             Form {
                 Section(L10n.text("剪贴板历史（默认关闭）")) {
                     Toggle(L10n.text("自动记录"), isOn: $store.options.clipboardEnabled)
@@ -102,21 +179,17 @@ struct SettingsView: View {
                     LabeledContent(L10n.text("已保存"), value: L10n.text("\(store.items.count) 项"))
                     Button(L10n.text("清空全部…"), role: .destructive) { clear = true }
                 }
-            }.formStyle(.grouped).tabItem { Label(L10n.text("内容"), systemImage: "tray") }
+            }.formStyle(.grouped)
+    }
+
+    private var shortcutSettings: some View {
             Form {
                 ShortcutRecorder(title: L10n.text("收纳剪贴板"), key: $store.options.pinKey, modifiers: $store.options.pinModifiers)
                 ShortcutRecorder(title: L10n.text("显示 / 隐藏"), key: $store.options.toggleKey, modifiers: $store.options.toggleModifiers)
                 ShortcutRecorder(title: L10n.text("快速便签"), key: $store.options.noteKey, modifiers: $store.options.noteModifiers)
                 ShortcutRecorder(title: L10n.text("捕获选中内容"), key: $store.options.selectionKey, modifiers: $store.options.selectionModifiers)
                 Text(L10n.text("点击录制后按组合键；捕获选中内容需要辅助功能权限。")).font(.caption).foregroundStyle(.secondary)
-            }.formStyle(.grouped).tabItem { Label(L10n.text("快捷键"), systemImage: "keyboard") }
-            AgentSettings().tabItem { Label("Agent", systemImage: "sparkles") }
-            CalendarSettings().tabItem { Label(L10n.text("日历"), systemImage: "calendar") }
-            MusicSettings().tabItem { Label(L10n.text("音乐"), systemImage: "music.note") }
-        }.frame(width: 620, height: 620)
-        .environment(\.locale, localization.locale)
-        .confirmationDialog(L10n.text("清空所有内容？"), isPresented: $clear) { Button(L10n.text("清空"), role: .destructive) { store.clearAll() } } message: { Text(L10n.text("无法撤销。原文件和 Agent 会话保留。")) }
-        .confirmationDialog(L10n.text("清空自动历史？"), isPresented: $history) { Button(L10n.text("清空"), role: .destructive) { store.clearHistory() } } message: { Text(L10n.text("收藏和手动添加内容保留。")) }
+            }.formStyle(.grouped)
     }
 }
 

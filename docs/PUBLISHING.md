@@ -42,11 +42,11 @@ git push -u origin main
 
 源码推送成功后，进入 **Releases → Draft a new release**：
 
-- Tag：`v0.2.42`，对应此版本的源码提交。
-- Title：`Nisla v0.2.42 (Preview)`。
-- 正文可使用 [`releases/v0.2.42.md`](releases/v0.2.42.md)。
+- Tag：`v0.2.47`，对应此版本的源码提交。
+- Title：`Nisla v0.2.47 (Preview)`。
+- 正文可使用 [`releases/v0.2.47.md`](releases/v0.2.47.md)。
 - 勾选 **Set as a pre-release**，明确这是测试版本。
-- 附件拖入 `dist/Nisla-0.2.42-universal-vnzgGg.zip`。
+- 附件拖入本次新生成并校验的 `dist/Nisla-0.2.47-universal-Cy4hQV.zip`，不要上传旧版本。
 
 确认附件上传完成，再发布。用户应下载你上传的安装包；GitHub 自动生成的 `Source code` 资产不能直接运行。
 

@@ -97,24 +97,45 @@ enum ActivityBarMotion {
     }
 }
 
+@MainActor enum CodexIconResolver {
+    // The user-selected knot mark is NOT icon-codex-light.png (the blue terminal).
+    // Read installed resources locally; do not redistribute another app's art.
+    static func image(in applications: [URL], load: (URL) -> NSImage? = { NSImage(contentsOf: $0) }) -> NSImage? {
+        for resource in ["icon-chatgpt.png", "icon-chatgpt.icns"] {
+            for application in applications {
+                if let image = load(application.appendingPathComponent("Contents/Resources/" + resource)) { return image }
+            }
+        }
+        return nil
+    }
+
+    static func installedImage() -> NSImage? {
+        let applicationFolders = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
+        let identifiers = ["com.openai.codex", "com.openai.chat"]
+        let registered = identifiers.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+        let named = applicationFolders.flatMap { folder in ["ChatGPT.app", "Codex.app"].map { folder.appendingPathComponent($0) } }
+        let applications = (registered + named).filter { url in
+            Bundle(url: url)?.bundleIdentifier.map(identifiers.contains) == true
+        }
+        if let image = image(in: applications) { return image }
+        // Older ChatGPT bundles may only declare their app icon in Info.plist.
+        if let chat = applications.first(where: { Bundle(url: $0)?.bundleIdentifier == "com.openai.chat" }) {
+            return NSWorkspace.shared.icon(forFile: chat.path)
+        }
+        return nil
+    }
+}
+
 struct CodexApplicationIcon: View {
     @ObservedObject private var localization = AppLocalization.shared
-    // Resolve locally: do not ship another application's artwork with Island.
-    @MainActor private static let installedIcon: NSImage? = {
-        let applicationFolders = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
-        let candidates = applicationFolders.flatMap { folder in ["Codex.app", "ChatGPT.app"].map { folder.appendingPathComponent($0) } }
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex")
-            ?? candidates.first(where: { Bundle(url: $0)?.bundleIdentifier == "com.openai.codex" }) else { return nil }
-        if let image = NSImage(contentsOf: url.appendingPathComponent("Contents/Resources/icon-codex-light.png")) { return image }
-        return NSWorkspace.shared.icon(forFile: url.path)
-    }()
+    @MainActor private static let installedIcon = CodexIconResolver.installedImage()
     var body: some View {
         if let icon = Self.installedIcon {
             Image(nsImage: icon).resizable().scaledToFit()
         } else {
             ZStack {
-                RoundedRectangle(cornerRadius: 5).fill(Color(red: 0.36, green: 0.38, blue: 0.88))
-                Image(systemName: "terminal.fill").font(.system(size: 13)).foregroundStyle(.white)
+                RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.10))
+                Image(systemName: "sparkles").font(.system(size: 13)).foregroundStyle(.white)
             }.accessibilityLabel("Codex")
         }
     }

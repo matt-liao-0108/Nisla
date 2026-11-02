@@ -41,6 +41,7 @@ struct PinItem: Identifiable, Codable, Hashable {
 
 enum ShelfGeometry {
     static let footerHeight: CGFloat = 42
+    static func showsFooter(expanded: Bool, reveal: CGFloat) -> Bool { expanded && reveal > 0.6 }
     // Moderate clearance inside the 10–12 pt inward shoulders, without
     // spending the compact title's limited width on excessive padding.
     static let headerContentInset: CGFloat = 24
@@ -59,7 +60,7 @@ enum ShelfGeometry {
     static func musicBodyHeight(hasTrack: Bool, showsProgress: Bool, guidanceLines: Int = 3) -> CGFloat {
         // Artwork + controls need no reserved space for a hidden timeline.
         // The empty/permission state can contain three lines of guidance.
-        guard hasTrack else { return 176 + CGFloat(min(3, max(1, guidanceLines)) - 1) * 14 }
+        guard hasTrack else { return 160 + CGFloat(min(3, max(1, guidanceLines)) - 1) * 14 }
         return showsProgress ? 198 : 156
     }
     static func reveal(height: CGFloat, collapsed: CGFloat, expanded: CGFloat) -> CGFloat {
@@ -125,6 +126,8 @@ enum PinFilter: String, CaseIterable {
     case all = "全部", text = "文字", image = "图片", link = "链接", file = "文件", note = "便签", history = "历史"
 }
 
+enum CodexSessionKind: String, Codable, Sendable { case review, subagent }
+
 struct CodexSession: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
@@ -132,6 +135,8 @@ struct CodexSession: Identifiable, Hashable, Codable, Sendable {
     let modifiedAt: Date
     let isRunning: Bool
     var sourcePath: String? = nil
+    var internalKind: CodexSessionKind? = nil
+    var parentThreadID: String? = nil
 }
 
 enum ActivityPhase: String, Sendable {

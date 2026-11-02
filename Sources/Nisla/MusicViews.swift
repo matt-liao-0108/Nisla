@@ -48,14 +48,28 @@ struct MusicShelf: View {
     }
 
     private func updateGuidanceHeight() {
-        let font = NSFont.systemFont(ofSize: 11)
         let width = max(1, store.options.shelfWidth - 2 * ShelfGeometry.expandedContentInset - 16)
-        let bounds = NSAttributedString(string: L10n.text(music.status), attributes: [.font: font])
-            .boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading])
-        let lineHeight = max(1, font.ascender - font.descender + font.leading)
-        let lines = min(3, max(1, Int(ceil(bounds.height / lineHeight))))
+        let lines = MusicGuidanceLayout.lineCount(L10n.text(music.status), width: width)
         if store.musicGuidanceLines != lines { store.musicGuidanceLines = lines }
     }
 
+}
+
+enum MusicGuidanceLayout {
+    /// Count actual line fragments instead of dividing rounded text bounds by
+    /// fractional font metrics (13 / 12.955 incorrectly rounded up to 2 lines).
+    static func lineCount(_ text: String, width: CGFloat) -> Int {
+        guard width.isFinite, width > 0 else { return 3 }
+        let storage = NSTextStorage(string: text, attributes: [.font: NSFont.systemFont(ofSize: 11)])
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        container.maximumNumberOfLines = 3
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        let glyphs = layout.glyphRange(for: container)
+        var count = 0
+        layout.enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, _, _ in count += 1 }
+        return min(3, max(1, count))
+    }
 }
