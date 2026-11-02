@@ -30,11 +30,23 @@ Nisla 是一个原生 macOS 刘海收纳与实时活动工具。把文字、图�
 
 ## 界面预览
 
-以下图片使用演示数据生成；系统玻璃的透色与折射取决于 macOS 版本和背景。
+从顶部刘海展开，六项功能放在同一个屏幕边缘。下方 GIF 依次演示收纳、Codex、日历、音乐、音量和亮度的展开与收起。
 
-| 音乐 | 日历 |
+![Nisla 刘海展开与收起：收纳、Codex、日历、音乐、音量和亮度](docs/assets/notch-overview.gif)
+
+| 收纳 | Codex 活动 |
 | --- | --- |
-| ![音乐面板演示](docs/assets/music.png) | ![日历面板演示](docs/assets/calendar.png) |
+| ![刘海收纳面板：便签、图片和链接](docs/assets/storage.png) | ![刘海 Codex 面板：运行、等待和完成状态](docs/assets/codex.png) |
+
+| 日历 | 音乐 |
+| --- | --- |
+| ![刘海日历面板演示](docs/assets/calendar.png) | ![刘海音乐面板演示](docs/assets/music.png) |
+
+| 音量 | 亮度 |
+| --- | --- |
+| ![刘海音量提示演示](docs/assets/volume.png) | ![刘海亮度提示演示](docs/assets/brightness.png) |
+
+以上是由实际原生视图和隔离演示数据生成的经典黑色外观预览，桌面背景为示意；GIF 使用应用的展开与收起曲线合成，并非实机录屏。音量、亮度数值为模拟数据。系统玻璃的透色与折射取决于 macOS 版本和真实背景，预览不代表玻璃效果。
 
 ## 下载与安装
 
