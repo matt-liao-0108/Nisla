@@ -18,6 +18,8 @@ import Foundation
         print("PASS: native player units, paused progress, locale decimals and HTTPS-only artwork")
         precondition(MusicCommand.next.rawValue == "next-track" && MusicCommand.previous.script == "previous track")
         precondition(MusicCommand.shuffle.mediaRemoteID == "6" && MusicCommand.shuffle.script.contains("shuffle enabled"))
+        precondition(NativeMusic.parseShuffle("true") == true && NativeMusic.parseShuffle("false") == false)
+        precondition(NativeMusic.parseShuffle("unknown") == nil && NativeMusic.parseShuffle(nil) == nil)
         let preferences = UserDefaults(suiteName: "IslandMusicChecks-" + UUID().uuidString)!
         let store = MusicStore(preferences: preferences)
         precondition(store.remoteArtwork)

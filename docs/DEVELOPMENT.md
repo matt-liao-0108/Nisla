@@ -2,6 +2,8 @@
 
 项目介绍、下载和权限说明见 [仓库首页](../README.md)。下述命令均从仓库根目录执行；Swift 项目名称与可执行文件名均为 Nisla。
 
+修改项目时请先阅读 [项目规范](../AGENTS.md)，其中包含界面、窗口动效、系统提示、验证和打包要求。
+
 ## 开发环境
 
 - 包含 macOS 26 SDK 的 Xcode / Command Line Tools，以及 Swift 6 工具链。

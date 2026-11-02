@@ -117,11 +117,15 @@ struct MusicDashboard: View {
     }
 
     private func control(_ symbol: String, _ value: MusicCommand, _ title: String, prominent: Bool) -> some View {
-        Button { command(value) } label: {
+        let shuffleActive = value == .shuffle && track?.shuffleEnabled == true
+        return Button { command(value) } label: {
             Image(systemName: symbol).font(.system(size: prominent ? 23 : value == .shuffle ? 16 : 22, weight: .semibold))
-                .foregroundStyle(.white.opacity(prominent ? 0.95 : value == .shuffle ? 0.5 : 0.95))
+                .foregroundStyle(shuffleActive ? Color(red: 0.12, green: 0.82, blue: 0.48) : .white.opacity(prominent ? 0.95 : value == .shuffle ? 0.5 : 0.95))
                 .frame(width: prominent ? 46 : 30, height: 46)
                 .background(prominent ? Color.white.opacity(0.08) : .clear, in: Circle())
+                .overlay(alignment: .bottom) {
+                    if shuffleActive { Circle().fill(Color(red: 0.12, green: 0.82, blue: 0.48)).frame(width: 4, height: 4).padding(.bottom, 2) }
+                }
                 .contentShape(Rectangle())
         }.buttonStyle(MusicControlStyle()).disabled(busy).help(title).accessibilityLabel(title)
     }

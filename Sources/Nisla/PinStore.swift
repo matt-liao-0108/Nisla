@@ -111,10 +111,12 @@ final class PinStore: ObservableObject {
         didSet { if oldValue && !isResizingWidth { persistOptions() } }
     }
     @Published var previewOpen = false
+    @Published var previewPinID: UUID?
     @Published var isClosingPreview = false
     @Published private(set) var previewDismissal = 0
     func dismissPreviews() {
         previewDismissal &+= 1
+        previewPinID = nil
         previewOpen = false
     }
     @Published var notchWidth: CGFloat = 0

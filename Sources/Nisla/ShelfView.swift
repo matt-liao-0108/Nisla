@@ -886,7 +886,18 @@ private struct PinCard: View {
             hoverTask?.cancel()
             showPreview = false
         }
-        .onChange(of: showPreview) { _, visible in store.previewOpen = visible || tagEditor }
+        .onChange(of: store.previewPinID) { _, id in
+            if id != item.id && showPreview { showPreview = false }
+        }
+        .onChange(of: showPreview) { _, visible in
+            if visible {
+                store.previewPinID = item.id
+                store.previewOpen = true
+            } else if store.previewPinID == item.id {
+                store.previewPinID = nil
+                store.previewOpen = tagEditor
+            }
+        }
         .onChange(of: tagEditor) { _, visible in
             store.previewOpen = visible || showPreview
             if visible {
@@ -896,7 +907,11 @@ private struct PinCard: View {
                 }
             }
         }
-        .onDisappear { hoverTask?.cancel(); if showPreview || tagEditor { store.previewOpen = false } }
+        .onDisappear {
+            hoverTask?.cancel()
+            if store.previewPinID == item.id { store.previewPinID = nil; store.previewOpen = false }
+            else if tagEditor { store.previewOpen = false }
+        }
         .contextMenu {
             if item.kind == .text {
                 Button(L10n.text("编辑文字")) { editedText = item.payload; showPreview = true }
@@ -914,10 +929,13 @@ private struct PinCard: View {
     }
 
     private func scheduleHoverPreview() {
-        guard store.isExpanded, !showPreview, !store.previewOpen, !store.selectionMode else { return }
+        guard store.isExpanded, !showPreview, (!store.previewOpen || store.previewPinID != nil), !store.selectionMode else { return }
         hoverTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(550))
-            guard !Task.isCancelled, store.isExpanded, !store.previewOpen, !store.selectionMode else { return }
+            guard !Task.isCancelled, store.isExpanded, (!store.previewOpen || store.previewPinID != nil), !store.selectionMode else { return }
+            store.previewPinID = item.id
+            await Task.yield()
+            guard !Task.isCancelled, store.isExpanded, store.previewPinID == item.id, !store.selectionMode else { return }
             editedText = item.payload
             showPreview = true
         }

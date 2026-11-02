@@ -39,6 +39,7 @@ struct MusicTrack: Sendable {
     let position: Double
     let artworkURL: URL?
     var artwork: Data? = nil
+    var shuffleEnabled: Bool? = nil
     var updatedAt = Date()
 
     func elapsed(at date: Date) -> Double {
@@ -63,21 +64,35 @@ enum NativeMusic {
                         set coverBytes to raw data of artwork 1 of current track
                     end try
             """ : "set coverBytes to \"\""
+            let shuffleProperty = player == .spotify ? "shuffling" : "shuffle enabled"
             let script = """
             with timeout of 4 seconds
                 if application id "\(player.rawValue)" is not running then return {}
                 tell application id "\(player.rawValue)"
                     if player state is stopped then return {}
                     \(artworkScript)
-                    return {name of current track, artist of current track, album of current track, player state as text, duration of current track, player position, \(cover), coverBytes}
+                    set shuffleState to "unknown"
+                    try
+                        set shuffleState to \(shuffleProperty) as text
+                    end try
+                    return {name of current track, artist of current track, album of current track, player state as text, duration of current track, player position, \(cover), coverBytes, shuffleState}
                 end tell
             end timeout
             """
             let result = try execute(script)
             var track = parseFields((1...min(7, max(1, result.numberOfItems))).map { result.atIndex($0)?.stringValue ?? "" }, player: player)
             if player == .apple, let data = result.atIndex(8)?.data, data.count < 8 * 1024 * 1024, NSImage(data: data) != nil { track?.artwork = data }
+            track?.shuffleEnabled = parseShuffle(result.atIndex(9)?.stringValue)
             return track
         }.value
+    }
+
+    static func parseShuffle(_ value: String?) -> Bool? {
+        switch value?.lowercased() {
+        case "true": true
+        case "false": false
+        default: nil
+        }
     }
 
     static func parseFields(_ fields: [String], player: MusicPlayer) -> MusicTrack? {
