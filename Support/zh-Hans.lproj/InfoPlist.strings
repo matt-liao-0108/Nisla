@@ -1,0 +1,4 @@
+"NSAppleEventsUsageDescription" = "Nisla 读取 Apple Music 或 Spotify 的播放信息，仅在你点击控制按钮时执行播放、暂停和切歌。";
+"NSBluetoothAlwaysUsageDescription" = "Nisla 读取已配对耳机的连接状态，以展示名称和 macOS 提供的电量。不主动配对设备。";
+"NSCalendarsFullAccessUsageDescription" = "Nisla 读取系统日历，在刘海面板展示日程和节假日。数据仅在本机展示，不修改日历内容。";
+"NSRemindersFullAccessUsageDescription" = "Nisla 读取系统提醒事项，在刘海面板展示未完成待办。数据仅在本机展示，不修改提醒事项。";

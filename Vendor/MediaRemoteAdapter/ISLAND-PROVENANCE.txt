@@ -1,0 +1,6 @@
+Source: https://github.com/ungive/mediaremote-adapter
+Revision: 0e82bf1c44ec39554fbfc402ec88a48c6ae2a0fd
+License: BSD-3-Clause (see LICENSE)
+Source files are unmodified. Island builds a universal framework from source.
+Only get and send (2, 4, 5, 6) are used. The test client is not bundled or run.
+No Boring Notch GPL source code is incorporated into Island.

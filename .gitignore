@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+._*
+
+# Swift / Xcode generated files
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Distribute binaries through Releases
+dist/
+*.app/
+*.zip
+*.dmg
+*.pkg
+
+# Local tooling caches
+.cache/
+.graph/
+# Legacy local caches; application source now lives at the repository root.
+/graft/
+.codex/
+.agents/
+
+# Credentials and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.key
+*.mobileprovision
+*.provisionprofile
+*.log
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

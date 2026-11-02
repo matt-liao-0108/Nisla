@@ -1,0 +1,10 @@
+# Keep generated local data out of source searches.
+/graft/
+.build/
+dist/
+
+# graft's cards are gitignored but should stay greppable: ripgrep reads
+# .ignore before .gitignore, so this re-admits the tree to search only.
+!graft/
+graft/.cache/
+graft/.graph/

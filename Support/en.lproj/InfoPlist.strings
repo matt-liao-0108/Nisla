@@ -1,0 +1,4 @@
+"NSAppleEventsUsageDescription" = "Nisla reads playback information from Apple Music or Spotify and sends playback commands only when you use its controls.";
+"NSBluetoothAlwaysUsageDescription" = "Nisla reads the connection state of paired headphones to show their name and battery information provided by macOS. It does not pair devices.";
+"NSCalendarsFullAccessUsageDescription" = "Nisla reads your system calendars to show events and holidays in the notch. Data stays on this Mac; Nisla does not edit calendar content.";
+"NSRemindersFullAccessUsageDescription" = "Nisla reads system reminders to show your to-dos in the notch. Data stays on this Mac; Nisla does not edit reminders.";
