@@ -53,6 +53,12 @@ struct InlineTextEditor: NSViewRepresentable {
             parent.text = editor.string
             parent.onCommit(editor.string)
         }
+        func textDidEndEditing(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView else { return }
+            editor.unmarkText()
+            parent.text = editor.string
+            parent.onCommit(editor.string)
+        }
     }
 }
 

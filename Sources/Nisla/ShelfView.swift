@@ -23,6 +23,9 @@ struct ShelfView: View {
     @State private var confirmSelection = false
     @State private var suppressHoverUntilExit = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var floatingIsland: Bool { !layout.attachedToMenuBar && layout.dock == "top" }
+    private var attachedSurface: Bool { layout.attachedToMenuBar && !floatingIsland }
+    private var bodyHeight: CGFloat { ShelfGeometry.bodyHeight(store.bodyHeight, floating: floatingIsland, selectedTab: store.selectedTab) }
 
     var body: some View {
         let hudReading = hud.reading ?? (headphones.reading == nil ? hud.displayReading : nil)
@@ -36,19 +39,20 @@ struct ShelfView: View {
                 .allowsHitTesting(!showingOverlay)
                 .accessibilityHidden(showingOverlay)
             if let reading = hudReading, layout.dock == "top" {
-                SystemHUDNotificationBanner(reading: reading, headerHeight: layout.headerHeight,
+                SystemHUDNotificationBanner(reading: reading, headerHeight: floatingIsland ? 0 : layout.headerHeight,
                     appearance: store.options.appearance,
-                    attached: layout.attachedToMenuBar)
+                    attached: attachedSurface)
             } else if let device = headphones.reading, layout.dock == "top" {
                 HeadphoneNotificationBanner(device: device, headerHeight: layout.headerHeight,
                     track: music.enabled && store.options.isTabVisible(3) ? music.track : nil,
                     remoteArtwork: music.remoteArtwork, animateEntrance: animateHeadphoneEntrance,
-                    attached: layout.attachedToMenuBar)
+                    attached: attachedSurface)
                     .transition(.identity)
                     .onTapGesture { headphones.dismiss() }
                     .help(L10n.text("点击收起耳机连接提示"))
             }
         }
+        .background(ShelfInteractionBoundary())
         .environment(\.locale, localization.locale)
         .onChange(of: showingOverlay) { _, showing in
             if showing { collapseTask?.cancel(); dragExpandTask?.cancel() }
@@ -57,7 +61,7 @@ struct ShelfView: View {
         .onDrop(of: [.fileURL, .image, .text, .url], delegate: ShelfDropDelegate(
             targeted: $isTargeted, hasFiles: $dropHasFiles, airDropTargeted: $airDropTargeted,
             completedAt: $completedDropAt, panelWidth: store.options.shelfWidth,
-            headerHeight: layout.headerHeight, bodyHeight: store.bodyHeight,
+            headerHeight: layout.headerHeight, bodyHeight: bodyHeight,
             isExpanded: store.isExpanded, perform: handleDrop))
         .onChange(of: isTargeted) { _, targeted in
             dragExpandTask?.cancel()
@@ -102,9 +106,10 @@ struct ShelfView: View {
     private var shelfContent: some View {
         GeometryReader { geometry in
             let collapsedHeight: CGFloat = layout.dock == "top" ? layout.headerHeight : 96
-            let expandedHeight = layout.headerHeight + store.bodyHeight + ShelfGeometry.footerHeight
+            let expandedHeight = layout.headerHeight + bodyHeight + ShelfGeometry.footerHeight
             let reveal = ShelfGeometry.reveal(height: geometry.size.height, collapsed: collapsedHeight, expanded: expandedHeight)
-            let surfaceHeight = ShelfGeometry.surfaceHeight(height: geometry.size.height, collapsed: collapsedHeight, expanded: expandedHeight)
+            let surfaceHeight = floatingIsland ? geometry.size.height
+                : ShelfGeometry.surfaceHeight(height: geometry.size.height, collapsed: collapsedHeight, expanded: expandedHeight)
             let contentReveal = min(1, max(0, (reveal - 0.22) / 0.78))
             Group {
              if layout.dock != "top" && !store.isExpanded {
@@ -115,7 +120,7 @@ struct ShelfView: View {
              } else { VStack(spacing: 0) {
                 collapsedBar
                     .background {
-                        if layout.dock == "top" { Color.black.allowsHitTesting(false) }
+                        if attachedSurface { Color.black.allowsHitTesting(false) }
                     }
                 expandedShelf
                     // The native panel is the layout authority during a live
@@ -126,22 +131,30 @@ struct ShelfView: View {
                     .animation(reduceMotion ? nil : .easeOut(duration: store.isExpanded ? 0.12 : 0.08), value: store.isExpanded)
                     .allowsHitTesting(store.isExpanded && reveal > 0.95)
                     .accessibilityHidden(!store.isExpanded)
+                if floatingIsland && ShelfGeometry.showsFooter(expanded: store.isExpanded, reveal: reveal) {
+                    ShelfTabBar(embedded: true)
+                        .frame(height: ShelfGeometry.footerHeight)
+                        .frame(maxWidth: .infinity)
+                        .opacity(max(0, (reveal - 0.6) / 0.4))
+                        .allowsHitTesting(store.isExpanded && reveal > 0.95)
+                }
              } }
             }
             .frame(width: geometry.size.width, height: surfaceHeight, alignment: .top)
             .modifier(ShelfMaterial(appearance: store.options.appearance, reveal: reveal,
-                shape: NotchOutline(reveal: reveal, shoulders: layout.attachedToMenuBar, floating: !layout.attachedToMenuBar),
-                shoulders: layout.attachedToMenuBar))
+                shape: NotchOutline(reveal: reveal, shoulders: attachedSurface, floating: !attachedSurface),
+                shoulders: attachedSurface))
         }
         .focusEffectDisabled()
         .ignoresSafeArea()
         // Mask the entire hosting surface, not just a GeometryReader child.
         .clipShape(ShelfSurfaceShape(collapsedHeight: layout.dock == "top" ? layout.headerHeight : 96,
-            expandedHeight: layout.headerHeight + store.bodyHeight + ShelfGeometry.footerHeight,
-            shoulders: layout.attachedToMenuBar, floating: !layout.attachedToMenuBar))
+            expandedHeight: layout.headerHeight + bodyHeight + ShelfGeometry.footerHeight,
+            shoulders: attachedSurface, floating: !attachedSurface, integratedFooter: floatingIsland))
         .overlay(alignment: .bottom) {
+          if !floatingIsland {
             GeometryReader { geometry in
-                let reveal = ShelfGeometry.reveal(height: geometry.size.height, collapsed: layout.dock == "top" ? layout.headerHeight : 96, expanded: layout.headerHeight + store.bodyHeight + ShelfGeometry.footerHeight)
+                let reveal = ShelfGeometry.reveal(height: geometry.size.height, collapsed: layout.dock == "top" ? layout.headerHeight : 96, expanded: layout.headerHeight + bodyHeight + ShelfGeometry.footerHeight)
                 // The footer must only receive clicks in its own capsule. A
                 // full-height frame here masked calendar day and month buttons.
                 VStack(spacing: 0) {
@@ -159,16 +172,16 @@ struct ShelfView: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
+          }
         }
         .contentShape(Rectangle())
         .environment(\.colorScheme, .dark)
-        .onExitCommand { store.isExpanded = false }
+        .onExitCommand { ShelfOutsideClickMonitor.shared.requestCollapse(store: store, force: true) }
         .task(id: store.feedback) {
             guard store.feedback != nil else { return }
             try? await Task.sleep(for: .seconds(1.5))
             if !Task.isCancelled { store.feedback = nil }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("IslandCollapse"))) { _ in store.isExpanded = false }
         .onHover { inside in
             guard headphones.reading == nil else { collapseTask?.cancel(); return }
             withAnimation(.easeOut(duration: 0.16)) { isHovering = inside }
@@ -185,6 +198,7 @@ struct ShelfView: View {
         }
         .onChange(of: store.isExpanded) { old, expanded in
             if old && !expanded {
+                if store.previewOpen { store.dismissPreviews() }
                 isTargeted = false
                 dropHasFiles = false
                 airDropTargeted = false
@@ -231,10 +245,10 @@ struct ShelfView: View {
 
     private func scheduleCollapseIfNeeded() {
         collapseTask?.cancel()
-        guard headphones.reading == nil, hud.reading == nil, !store.isResizingWidth, !isHovering, !layout.anchorHovered, !isTargeted, !store.keepOpen, !store.previewOpen, !confirmSelection, store.notice == nil else { return }
+        guard headphones.reading == nil, hud.reading == nil, !store.isResizingWidth, !isHovering, !layout.anchorHovered, !isTargeted, !store.keepOpen, !store.previewOpen, !store.isClosingPreview, !confirmSelection, store.notice == nil else { return }
         collapseTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(650))
-            guard !Task.isCancelled, headphones.reading == nil, hud.reading == nil, !store.isResizingWidth, !isHovering, !layout.anchorHovered, !isTargeted, !store.previewOpen, !store.keepOpen, !confirmSelection, store.notice == nil else { return }
+            guard !Task.isCancelled, headphones.reading == nil, hud.reading == nil, !store.isResizingWidth, !isHovering, !layout.anchorHovered, !isTargeted, !store.previewOpen, !store.isClosingPreview, !store.keepOpen, !confirmSelection, store.notice == nil else { return }
             store.isExpanded = false
         }
     }
@@ -250,8 +264,15 @@ struct ShelfView: View {
         store.isExpanded = true
     }
 
+    private func toggleShelfFromClick() {
+        if store.isExpanded { ShelfOutsideClickMonitor.shared.requestCollapse(store: store, force: true) }
+        else { openShelfFromClick() }
+    }
+
     @ViewBuilder private var collapsedBar: some View {
-      if !store.isExpanded && layout.dock == "top" && layout.compactPresentation == .notch {
+      if floatingIsland {
+        floatingIslandBar
+      } else if !store.isExpanded && layout.dock == "top" && layout.compactPresentation == .notch {
         Button { openShelfFromClick() } label: {
             Color.clear.frame(maxWidth: .infinity).frame(height: layout.headerHeight).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开 Nisla；菜单栏空间不足时隐藏两侧内容"))
@@ -285,7 +306,7 @@ struct ShelfView: View {
             .accessibilityHidden(store.isExpanded && hud.reading == nil)
             if layout.notchWidth > 0 {
                 Button {
-                    store.isExpanded.toggle()
+                    toggleShelfFromClick()
                 } label: {
                     Color.clear.frame(width: layout.notchWidth + 12, height: layout.headerHeight).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开或收起"))
@@ -320,7 +341,7 @@ struct ShelfView: View {
                         .frame(width: 24, height: 24).contentShape(Rectangle())
                 }.buttonStyle(.plain).help(L10n.text("添加当前剪贴板（⌃⌘P）")).accessibilityLabel(L10n.text("添加当前剪贴板"))
                 }
-                Button { store.isExpanded.toggle() } label: {
+                Button { toggleShelfFromClick() } label: {
                     Image(systemName: store.isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
                         .frame(width: 24, height: 24).contentShape(Rectangle())
@@ -338,6 +359,75 @@ struct ShelfView: View {
       }
     }
 
+    private var floatingIslandBar: some View {
+        HStack(spacing: 10) {
+            if store.isExpanded && store.selectedTab == 0 && searchVisible {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(L10n.text("搜索收纳内容"), text: $store.query).textFieldStyle(.plain)
+                    .focused($searchFocused)
+                Button { store.query = ""; searchVisible = false } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help(L10n.text("关闭搜索"))
+            } else {
+            Button {
+                if !store.isExpanded { openShelfFromClick(tab: compactActivity.tab) }
+            } label: {
+                HStack(spacing: 7) {
+                    if store.isExpanded {
+                        let tab = ShelfTab(rawValue: store.selectedTab) ?? .pins
+                        Image(systemName: tab.symbol).foregroundStyle(store.options.activityColor)
+                        Text(L10n.text(tab.title)).font(.system(size: 12, weight: .semibold))
+                    } else if !isTargeted && compactActivity.kind != .idle {
+                        CompactActivityLabel(activity: compactActivity, remoteArtwork: music.remoteArtwork, showTitle: true)
+                    } else {
+                        Image(systemName: "tray").foregroundStyle(isTargeted ? store.options.activityColor : .white)
+                        Text(isTargeted ? L10n.text("松开即可收纳") : "Nisla")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: layout.headerHeight).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .allowsHitTesting(!store.isExpanded)
+                .accessibilityLabel(L10n.text("打开当前实时活动或收纳区"))
+            }
+            if store.isExpanded {
+                if let feedback = store.feedback {
+                    Text(L10n.text(feedback)).font(.system(size: 10)).foregroundStyle(.mint.opacity(0.8))
+                        .lineLimit(1).allowsHitTesting(false)
+                }
+                if store.selectedTab == 0 { storageToolbarActions }
+                Button { store.keepOpen.toggle() } label: {
+                    Image(systemName: store.keepOpen ? "lock.fill" : "lock.open").frame(width: 24, height: 24)
+                }.buttonStyle(.plain)
+                    .help(store.keepOpen ? L10n.text("允许自动收起") : L10n.text("保持展开"))
+                Button { store.capturePasteboard() } label: {
+                    Image(systemName: "doc.on.clipboard").frame(width: 24, height: 24)
+                }.buttonStyle(.plain).help(L10n.text("添加当前剪贴板（⌃⌘P）"))
+                Button { ShelfOutsideClickMonitor.shared.requestCollapse(store: store, force: true) } label: {
+                    Image(systemName: "chevron.up").frame(width: 24, height: 24)
+                }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开或收起"))
+            } else if isHovering {
+                Button { openShelfFromClick(tab: compactActivity.tab) } label: {
+                    Image(systemName: "chevron.down").frame(width: 24, height: 24)
+                }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开或收起"))
+            } else if compactActivity.kind != .idle && !isTargeted {
+                Button { openShelfFromClick(tab: compactActivity.tab) } label: {
+                    CompactActivityIndicator(activity: compactActivity, tint: store.options.activityColor, showCount: true)
+                        .frame(minWidth: 24, minHeight: layout.headerHeight)
+                }.buttonStyle(.plain).accessibilityLabel(L10n.text("打开当前实时活动或收纳区"))
+            } else {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.stack").font(.system(size: 10))
+                    Text("\(store.items.count)").monospacedDigit()
+                }.font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+            }
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 16)
+        .frame(height: layout.headerHeight)
+    }
+
     private var compactActivity: CompactActivity {
         let session = store.pinnedSessions.first { store.activities[$0.id]?.phase == .running || store.activities[$0.id]?.phase == .waiting }
         return CompactActivity.resolve(selectedTab: store.selectedTab,
@@ -348,7 +438,7 @@ struct ShelfView: View {
 
     private var expandedShelf: some View {
         VStack(spacing: 8) {
-          if store.selectedTab != 2 && store.selectedTab != 3 {
+          if !floatingIsland && store.selectedTab != 2 && store.selectedTab != 3 {
           HStack(spacing: 8) {
             if searchVisible && store.selectedTab == 0 {
                 Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -356,7 +446,7 @@ struct ShelfView: View {
                     .font(.system(size: 11)).focused($searchFocused)
                 Button { store.query = ""; searchVisible = false } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help(L10n.text("关闭搜索"))
-            } else {
+            } else if !floatingIsland {
                 Text(L10n.text(ShelfTab(rawValue: store.selectedTab)?.title ?? "收纳"))
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
             }
@@ -365,32 +455,13 @@ struct ShelfView: View {
                 Text(L10n.text(feedback)).font(.system(size: 10)).foregroundStyle(.mint.opacity(0.8))
                     .lineLimit(1).allowsHitTesting(false)
             }
-            if store.selectedTab == 0 {
-                Button { store.newNote() } label: { Image(systemName: "square.and.pencil").frame(width: 24, height: 24).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).help(L10n.text("新建便签"))
-                Menu {
-                    Picker(L10n.text("类型"), selection: $store.filter) { ForEach(PinFilter.allCases, id: \.self) { Text(L10n.text($0.rawValue)).tag($0) } }
-                    Menu(L10n.text("标签")) {
-                        Button(L10n.text("全部标签")) { store.tagFilter = nil }
-                        ForEach(store.allTags, id: \.self) { tag in Button(tag) { store.tagFilter = tag } }
-                    }
-                    Picker(L10n.text("排序"), selection: $store.options.sortOrder) {
-                        Text(L10n.text("添加时间")).tag("added"); Text(L10n.text("最近使用")).tag("used"); Text(L10n.text("手动顺序")).tag("manual")
-                    }
-                    Divider()
-                    Button(store.selectionMode ? L10n.text("退出多选") : L10n.text("多选")) { store.selectionMode.toggle(); store.selectedIDs.removeAll() }
-                    if store.selectionMode { Button(L10n.text("删除选中…"), role: .destructive) { confirmSelection = true }.disabled(store.selectedIDs.isEmpty) }
-                } label: { Image(systemName: "line.3.horizontal.decrease").foregroundStyle(store.hasActiveFilters ? Color.mint : Color.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).fixedSize().help(L10n.text("筛选、标签与排序"))
+            if store.selectedTab == 0 { storageToolbarActions }
+            if !floatingIsland {
+                Button { store.keepOpen.toggle() } label: {
+                    Image(systemName: store.keepOpen ? "lock.fill" : "lock.open").foregroundStyle(store.keepOpen ? .white : .gray)
+                        .frame(width: 24, height: 24).contentShape(Rectangle())
+                }.buttonStyle(.plain).help(store.keepOpen ? L10n.text("允许自动收起") : L10n.text("保持展开"))
             }
-            if store.selectedTab == 0 && !searchVisible {
-                Button { searchVisible = true; searchFocused = true } label: {
-                    Image(systemName: "magnifyingglass").frame(width: 24, height: 24).contentShape(Rectangle())
-                }.buttonStyle(.plain).help(L10n.text("搜索"))
-            }
-            Button { store.keepOpen.toggle() } label: {
-                Image(systemName: store.keepOpen ? "lock.fill" : "lock.open").foregroundStyle(store.keepOpen ? .white : .gray)
-                    .frame(width: 24, height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain).help(store.keepOpen ? L10n.text("允许自动收起") : L10n.text("保持展开"))
           }
           }
 
@@ -423,7 +494,30 @@ struct ShelfView: View {
         }
         .padding(.horizontal, ShelfGeometry.expandedContentInset)
         .padding(.vertical, 8)
-        .frame(height: store.bodyHeight, alignment: .top)
+        .frame(height: bodyHeight, alignment: .top)
+    }
+
+    @ViewBuilder private var storageToolbarActions: some View {
+        Button { store.newNote() } label: { Image(systemName: "square.and.pencil").frame(width: 24, height: 24).contentShape(Rectangle()) }
+            .buttonStyle(.plain).help(L10n.text("新建便签"))
+        Menu {
+            Picker(L10n.text("类型"), selection: $store.filter) { ForEach(PinFilter.allCases, id: \.self) { Text(L10n.text($0.rawValue)).tag($0) } }
+            Menu(L10n.text("标签")) {
+                Button(L10n.text("全部标签")) { store.tagFilter = nil }
+                ForEach(store.allTags, id: \.self) { tag in Button(tag) { store.tagFilter = tag } }
+            }
+            Picker(L10n.text("排序"), selection: $store.options.sortOrder) {
+                Text(L10n.text("添加时间")).tag("added"); Text(L10n.text("最近使用")).tag("used"); Text(L10n.text("手动顺序")).tag("manual")
+            }
+            Divider()
+            Button(store.selectionMode ? L10n.text("退出多选") : L10n.text("多选")) { store.selectionMode.toggle(); store.selectedIDs.removeAll() }
+            if store.selectionMode { Button(L10n.text("删除选中…"), role: .destructive) { confirmSelection = true }.disabled(store.selectedIDs.isEmpty) }
+        } label: { Image(systemName: "line.3.horizontal.decrease").foregroundStyle(store.hasActiveFilters ? Color.mint : Color.primary).frame(width: 24, height: 24) }.menuStyle(.borderlessButton).fixedSize().help(L10n.text("筛选、标签与排序"))
+        if !searchVisible {
+            Button { searchVisible = true; searchFocused = true } label: {
+                Image(systemName: "magnifyingglass").frame(width: 24, height: 24).contentShape(Rectangle())
+            }.buttonStyle(.plain).help(L10n.text("搜索"))
+        }
     }
 
     private var pinsContent: some View {
@@ -682,14 +776,7 @@ private struct PinCard: View {
             }
             .onHover { inside in
                 hoverTask?.cancel()
-                if inside && !showPreview && !store.previewOpen && !store.selectionMode {
-                    hoverTask = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(550))
-                        guard !Task.isCancelled, !store.previewOpen else { return }
-                        editedText = item.payload
-                        showPreview = true
-                    }
-                }
+                if inside { scheduleHoverPreview() }
             }
             HStack {
                 Text(item.isNote == true ? L10n.text("便签") : item.kind == .text ? L10n.text("文字") : item.kind == .image ? item.title : item.kind == .link ? L10n.text("链接") : item.kind == .folder ? L10n.text("文件夹") : L10n.text("文件"))
@@ -777,6 +864,26 @@ private struct PinCard: View {
             .background(Color(white: 0.09))
             .preferredColorScheme(.dark)
             .environment(\.colorScheme, .dark)
+            .background(ShelfInteractionBoundary(preview: true))
+        }
+#if ISLAND_PANEL_PREVIEW
+        // Test-only entry into the same delayed hover path, without moving the
+        // user's pointer or replacing the actual SwiftUI card popover.
+        .onReceive(NotificationCenter.default.publisher(for: .init("NislaTestHoverPinPreview"))) { notification in
+            guard let id = notification.object as? UUID, id == item.id else { return }
+            hoverTask?.cancel()
+            scheduleHoverPreview()
+        }
+#endif
+        .onChange(of: store.isExpanded) { _, expanded in
+            if !expanded {
+                hoverTask?.cancel()
+                showPreview = false
+            }
+        }
+        .onChange(of: store.previewDismissal) { _, _ in
+            hoverTask?.cancel()
+            showPreview = false
         }
         .onChange(of: showPreview) { _, visible in store.previewOpen = visible || tagEditor }
         .onChange(of: tagEditor) { _, visible in
@@ -803,6 +910,16 @@ private struct PinCard: View {
             Button(L10n.text("删除"), role: .destructive) { store.remove(item) }
         }
         .help(item.kind == .text ? L10n.text("悬停或单击编辑，自动保存；可直接拖出") : L10n.text("单击预览，双击打开；可直接拖出"))
+    }
+
+    private func scheduleHoverPreview() {
+        guard store.isExpanded, !showPreview, !store.previewOpen, !store.selectionMode else { return }
+        hoverTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard !Task.isCancelled, store.isExpanded, !store.previewOpen, !store.selectionMode else { return }
+            editedText = item.payload
+            showPreview = true
+        }
     }
 
     private var openTitle: String {
@@ -908,7 +1025,9 @@ private struct CodexView: View {
         }.foregroundStyle(.white)
         .popover(item: $selectedSession) { session in
             AgentConversation(session: session).environmentObject(store)
+                .background(ShelfInteractionBoundary(preview: true))
         }
+        .onChange(of: store.previewDismissal) { _, _ in selectedSession = nil }
         .onChange(of: selectedSession) { _, session in store.previewOpen = session != nil }
         .onDisappear { store.previewOpen = false }
         .onAppear { store.refreshCodex() }

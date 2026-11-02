@@ -12,9 +12,11 @@ struct ShelfSurfaceShape: Shape {
     var expandedHeight: CGFloat
     var shoulders = true
     var floating = false
+    var integratedFooter = false
     func path(in rect: CGRect) -> Path {
         let reveal = ShelfGeometry.reveal(height: rect.height, collapsed: collapsedHeight, expanded: expandedHeight)
-        let surface = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: ShelfGeometry.surfaceHeight(height: rect.height, collapsed: collapsedHeight, expanded: expandedHeight))
+        let surface = CGRect(x: rect.minX, y: rect.minY, width: rect.width,
+            height: integratedFooter ? rect.height : ShelfGeometry.surfaceHeight(height: rect.height, collapsed: collapsedHeight, expanded: expandedHeight))
         return NotchOutline(reveal: reveal, shoulders: shoulders, floating: floating).path(in: surface)
     }
 }
@@ -28,14 +30,18 @@ struct NotchOutline: Shape {
     var animatableData: CGFloat { get { reveal } set { reveal = newValue } }
 
     func path(in rect: CGRect) -> Path {
-        if floating { return RoundedRectangle(cornerRadius: 14 + 8 * min(1, max(0, reveal))).path(in: rect) }
+        if floating {
+            let progress = min(1, max(0, reveal))
+            let radius = min(rect.height / 2, 18 + 10 * progress)
+            return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: rect)
+        }
         guard shoulders else {
             return UnevenRoundedRectangle(bottomLeadingRadius: 14 + 8 * reveal,
                 bottomTrailingRadius: 14 + 8 * reveal).path(in: rect)
         }
-        let progress = min(1, max(0, reveal))
-        let shoulder = min(10 + 2 * progress, rect.width / 8, rect.height / 3)
-        let bottom = min(14 + 8 * progress, rect.height - shoulder, (rect.width - 2 * shoulder) / 2)
+        let shoulder = min(10, rect.width / 8, rect.height / 3)
+        // The notch keeps the same contour as the panel expands and collapses.
+        let bottom = min(10, rect.height - shoulder, (rect.width - 2 * shoulder) / 2)
         guard shoulder > 0, bottom > 0 else { return Path(rect) }
         let k: CGFloat = 0.5522847498
         let left = rect.minX + shoulder, right = rect.maxX - shoulder
@@ -64,6 +70,7 @@ struct NotchOutline: Shape {
 }
 
 struct ShelfTabBar: View {
+    var embedded = false
     @ObservedObject private var localization = AppLocalization.shared
     @EnvironmentObject private var store: PinStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -71,6 +78,21 @@ struct ShelfTabBar: View {
     @State private var hovered: Int?
 
     var body: some View {
+        Group {
+            if embedded {
+                tabItems.padding(4)
+            } else {
+                tabItems.padding(4)
+                    .modifier(ShelfMaterial(appearance: store.options.appearance, reveal: 1, shape: Capsule(), capsule: true))
+                    .clipShape(Capsule())
+            }
+        }
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 1), value: store.selectedTab)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovered)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var tabItems: some View {
         HStack(spacing: 3) {
             ForEach(ShelfTab.allCases.filter { store.isTabPresented($0.rawValue) }) { tab in
                 let selected = store.selectedTab == tab.rawValue
@@ -102,11 +124,5 @@ struct ShelfTabBar: View {
                 .onHover { hovered = $0 ? tab.id : nil }
             }
         }
-        .padding(4)
-        .modifier(ShelfMaterial(appearance: store.options.appearance, reveal: 1, shape: Capsule(), capsule: true))
-        .clipShape(Capsule())
-        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 1), value: store.selectedTab)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovered)
-        .accessibilityElement(children: .contain)
     }
 }

@@ -111,6 +111,12 @@ final class PinStore: ObservableObject {
         didSet { if oldValue && !isResizingWidth { persistOptions() } }
     }
     @Published var previewOpen = false
+    @Published var isClosingPreview = false
+    @Published private(set) var previewDismissal = 0
+    func dismissPreviews() {
+        previewDismissal &+= 1
+        previewOpen = false
+    }
     @Published var notchWidth: CGFloat = 0
     @Published var headerHeight: CGFloat = 36
     @Published var musicHasTrack = false
@@ -181,7 +187,10 @@ final class PinStore: ObservableObject {
         self.storageDirectory = storageDirectory
         self.preferences = preferences
         self.interactive = interactive
-        if let data = preferences.data(forKey: "options"), let saved = try? decoder.decode(IslandOptions.self, from: data) { options = saved.validated() }
+        if let data = preferences.data(forKey: "options"), let saved = try? decoder.decode(IslandOptions.self, from: data) {
+            options = saved.validated()
+            if options != saved { persistOptions() }
+        }
         selectedTab = options.visibleTabIDs[0]
         load()
         if let data = preferences.data(forKey: "pinnedSessions"),

@@ -20,6 +20,7 @@ import AppKit
         let preferences = UserDefaults(suiteName: "IslandCornerChecks-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: directory, preferences: preferences, interactive: false)
         let layout = PanelLayout()
+        store.options.presentationStyle = "notch"
         let previewDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/ShapePreviews")
         try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
         for reveal: CGFloat in [0, 0.1, 0.5, 1] {

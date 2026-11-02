@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var eventMonitor: Any?
     private var localPointerMonitor: Any?
+    private let outsideClickMonitor = ShelfOutsideClickMonitor.shared
     private var cancellables = Set<AnyCancellable>()
     private var settingsWindow: NSWindow?
     private var hotKey: EventHotKeyRef?
@@ -65,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localPointerMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
             MainActor.assumeIsolated { self?.panels.forEach { $0.updateHoverAnchor() } }
             return event
+        }
+        outsideClickMonitor.start(store: store) {
+            NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && CenteredNoticeAlert.shared.owns($0) }
+                || SystemHUD.shared.reading != nil || HeadphoneConnection.shared.reading != nil
         }
         SystemHUD.shared.configure(volume: store.options.hudVolumeEnabled ?? false,
                                    brightness: store.options.hudBrightnessEnabled ?? false)
@@ -306,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
         if let localPointerMonitor { NSEvent.removeMonitor(localPointerMonitor) }
+        outsideClickMonitor.stop()
         menuBarMonitor.stop()
         musicMonitor?.cancel()
         SystemHUD.shared.stop()
@@ -342,6 +348,9 @@ final class IslandPanel: NSPanel {
     private let store: PinStore
     private var resizeTask: Task<Void, Never>?
     private var resizeTarget: NSRect?
+    private var resizeGeneration = 0
+    private var applyingFrame = false
+    private var geometryObservers: [NSObjectProtocol] = []
     private var headphonePresentationActive = false
     private var hudPresentationActive = false
     private var menuBar = MenuBarOccupancy(items: nil, menuBar: nil)
@@ -371,10 +380,18 @@ final class IslandPanel: NSPanel {
         hostingView.autoresizingMask = [.width, .height]
         hostingView.frame = contentRect(forFrameRect: frame)
         contentView = hostingView
+        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+            geometryObservers.append(NotificationCenter.default.addObserver(forName: name, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.restoreSettledGeometry() }
+            })
+        }
         setExpanded(store.isExpanded)
         pointerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 self?.updateHoverAnchor()
+                // AppKit can reposition the source panel while a detached
+                // popover is closing, including without a later state change.
+                if let self, !self.store.previewOpen { self.restoreSettledGeometry() }
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
@@ -384,7 +401,30 @@ final class IslandPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func cancelOperation(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("IslandCollapse"), object: nil)
+        SystemHUD.shared.dismissPresentation()
+        HeadphoneConnection.shared.dismiss()
+        ShelfOutsideClickMonitor.shared.requestCollapse(store: store, force: true)
+        setExpanded(store.isExpanded)
+    }
+
+    /// AppKit can adjust a popover's source window while dismissing it. The
+    /// cached destination is not proof the native window is still at that frame.
+    private func restoreSettledGeometry() {
+        guard !applyingFrame, resizeTask == nil, !store.isResizingWidth,
+              let target = resizeTarget, !matchesFrame(target) else { return }
+        applyFrame(target)
+    }
+
+    private func matchesFrame(_ target: NSRect) -> Bool {
+        abs(frame.minX - target.minX) < 0.5 && abs(frame.minY - target.minY) < 0.5
+            && abs(frame.width - target.width) < 0.5 && abs(frame.height - target.height) < 0.5
+    }
+
+    private func applyFrame(_ target: NSRect) {
+        applyingFrame = true
+        setFrame(target, display: true)
+        contentView?.layoutSubtreeIfNeeded()
+        applyingFrame = false
     }
 
     func position() {
@@ -400,7 +440,7 @@ final class IslandPanel: NSPanel {
     }
 
     func updateHoverAnchor() {
-        guard isVisible, layout.dock == "top",
+        guard layout.attachedToMenuBar, isVisible, layout.dock == "top",
               let screen = NSScreen.screens.first(where: { $0.islandID == targetScreenID }),
               let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else {
             if layout.anchorHovered { layout.anchorHovered = false }
@@ -424,8 +464,11 @@ final class IslandPanel: NSPanel {
             notchWidth = max(0, right.minX - left.maxX)
         } else { notchWidth = 0 }
         let dock = store.options.dockPositions[targetScreenID] ?? "top"
+        let displayID = (targetScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        let nativeSupport = NativeIslandCompatibility.current(builtInDisplay: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false)
+        let floating = dock == "top" && store.options.usesFloatingIsland(nativeSupport: nativeSupport)
         let headerHeight = max(32, targetScreen.safeAreaInsets.top)
-        let actualHeader = dock == "top" ? headerHeight : 32
+        let actualHeader = floating ? FloatingIslandGeometry.headerHeight : dock == "top" ? headerHeight : 32
         if layout.headerHeight != actualHeader { layout.headerHeight = actualHeader }
         if layout.dock != dock { layout.dock = dock }
         let hudVisible = SystemHUD.shared.reading != nil && dock == "top"
@@ -438,36 +481,51 @@ final class IslandPanel: NSPanel {
         // Avoidance is limited to the compact wings. Expansion remains attached
         // to the top edge, including the original physical-notch header.
         let widePresentation = expanded || connectionVisible || SystemHUD.shared.reading != nil || notchWidth == 0
-        let attached = dock == "top"
+        let attached = dock == "top" && !floating
         if layout.attachedToMenuBar != attached { layout.attachedToMenuBar = attached }
         let oldMode = layout.compactPresentation
-        let presentation: CompactPresentation = widePresentation || dock != "top" ? .full : mode
+        let presentation: CompactPresentation = floating || widePresentation || dock != "top" ? .full : mode
         if layout.compactPresentation != presentation { layout.compactPresentation = presentation }
-        let actualNotch = dock == "top" ? notchWidth : 0
+        let actualNotch = dock == "top" && !floating ? notchWidth : 0
         if layout.notchWidth != actualNotch { layout.notchWidth = actualNotch }
         let headphoneTransition = connectionVisible || headphonePresentationActive
         headphonePresentationActive = connectionVisible
         let hudTransition = hudVisible || hudPresentationActive
         hudPresentationActive = hudVisible
         let expandedWidth = shelfWidth ?? store.options.shelfWidth
-        let size = hudVisible ? SystemHUDGeometry.size(notchWidth: notchWidth, headerHeight: layout.headerHeight)
+        let bodyHeight = ShelfGeometry.bodyHeight(store.bodyHeight, floating: floating, selectedTab: store.selectedTab)
+        var size = hudVisible ? SystemHUDGeometry.size(notchWidth: actualNotch, headerHeight: floating ? 0 : layout.headerHeight)
             : connectionVisible
             ? NSSize(width: compactConnection ? max(270, notchWidth + 210) : max(440, min(580, expandedWidth)),
                      height: layout.headerHeight + (compactConnection ? 0 : 96))
-            : NSSize(width: expanded ? expandedWidth : dock == "top" ? (widePresentation ? max(270, notchWidth + 210) : notchWidth + mode.extraWidth) : 24, height: expanded ? layout.headerHeight + store.bodyHeight + ShelfGeometry.footerHeight : dock == "top" ? layout.headerHeight : 96)
+            : NSSize(width: expanded ? expandedWidth : dock == "top" ? (widePresentation ? max(270, notchWidth + 210) : notchWidth + mode.extraWidth) : 24, height: expanded ? layout.headerHeight + bodyHeight + ShelfGeometry.footerHeight : dock == "top" ? layout.headerHeight : 96)
+        if floating, !expanded, !hudVisible, !connectionVisible {
+            let codexActive = store.options.isTabVisible(1) && (store.activeCount > 0 || store.waitingCount > 0 || store.recentlyCompleted != nil)
+            let musicActive = store.options.isTabVisible(3) && MusicStore.shared.enabled && MusicStore.shared.track != nil
+            size.width = FloatingIslandGeometry.compactWidth(hasActivity: codexActive || musicActive)
+        } else if floating, compactConnection { size.width = FloatingIslandGeometry.compactWidth(hasActivity: true) }
         let newFrame: NSRect
-        if dock == "top" {
+        if floating {
+            newFrame = FloatingIslandGeometry.frame(screen: targetScreen.frame, visible: targetScreen.visibleFrame,
+                safeTop: targetScreen.safeAreaInsets.top, size: size)
+        } else if dock == "top" {
             newFrame = MenuBarAvoidance.topFrame(center: notchCenter, screenTop: targetScreen.frame.maxY,
                 size: size)
         }
         else { newFrame = NSRect(x: dock == "left" ? targetScreen.frame.minX : targetScreen.frame.maxX - size.width, y: targetScreen.visibleFrame.midY - size.height / 2, width: size.width, height: size.height) }
-        guard resizeTarget != newFrame else { return }
+        if resizeTarget == newFrame {
+            if resizeTask != nil || matchesFrame(newFrame) { return }
+            applyFrame(newFrame)
+            return
+        }
         resizeTarget = newFrame
         resizeTask?.cancel()
+        resizeTask = nil
+        resizeGeneration &+= 1
+        let generation = resizeGeneration
         let urgentShrink = menuBarUpdate && !widePresentation && presentation.rawValue < oldMode.rawValue
         guard isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, !urgentShrink, !store.isResizingWidth else {
-            setFrame(newFrame, display: true)
-            contentView?.layoutSubtreeIfNeeded()
+            applyFrame(newFrame)
             return
         }
         // One animation owns both the native window and its hosting view. Start
@@ -481,17 +539,22 @@ final class IslandPanel: NSPanel {
             : headphoneTransition ? (opening ? 0.46 : 0.38)
             : IslandMotion.shelfDuration(opening: opening, resizingContent: resizingContent)
         resizeTask = Task { @MainActor [weak self] in
+            defer {
+                if let self, self.resizeGeneration == generation {
+                    self.resizeTask = nil
+                    self.restoreSettledGeometry()
+                }
+            }
             let began = ProcessInfo.processInfo.systemUptime
             while !Task.isCancelled {
-                guard let self else { return }
+                guard let self, self.resizeGeneration == generation else { return }
                 let progress = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
                 if dock == "top" {
                     let safeFrame = MenuBarAvoidance.frame(from: start, to: newFrame,
                         progress: progress, opening: opening, resizingContent: resizingContent,
                         headphone: headphoneTransition, compactOnly: max(start.height, newFrame.height) <= layout.headerHeight + 0.5,
                         hud: hudTransition)
-                    self.setFrame(safeFrame, display: true)
-                    self.contentView?.layoutSubtreeIfNeeded()
+                    self.applyFrame(safeFrame)
                     if progress == 1 { break }
                     try? await Task.sleep(for: .milliseconds(16))
                     continue
@@ -503,15 +566,17 @@ final class IslandPanel: NSPanel {
                 let height = start.height + (newFrame.height - start.height) * motion.height
                 let x = dock == "top" ? newFrame.midX - width / 2 : dock == "left" ? newFrame.minX : newFrame.maxX - width
                 let y = dock == "top" ? newFrame.maxY - height : newFrame.midY - height / 2
-                self.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
-                self.contentView?.layoutSubtreeIfNeeded()
+                self.applyFrame(NSRect(x: x, y: y, width: width, height: height))
                 if progress == 1 { break }
                 try? await Task.sleep(for: .milliseconds(16))
             }
         }
     }
 
-    deinit { pointerTask?.cancel(); resizeTask?.cancel() }
+    isolated deinit {
+        pointerTask?.cancel(); resizeTask?.cancel()
+        geometryObservers.forEach(NotificationCenter.default.removeObserver)
+    }
 
 
     func toggle() {

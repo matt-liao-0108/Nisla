@@ -23,11 +23,12 @@ import AppKit
         let output = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/ConversationPreviews")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         func snapshot(_ name: String, message: String, internalKind: CodexSessionKind? = nil,
-                      connection: CodexConnection? = nil, threadID: String? = nil) throws -> CGFloat {
+                      connection: CodexConnection? = nil, threadID: String? = nil,
+                      sourcePath: String? = nil, phase: ActivityPhase = .completed) throws -> CGFloat {
             let session = CodexSession(id: threadID ?? "fixture-" + name, title: name == "review" ? "Guardian review" : "演示会话",
                 project: "Fixture", modifiedAt: .now, isRunning: false,
-                internalKind: internalKind, parentThreadID: internalKind == nil ? nil : "fixture-main")
-            store.activities = [session.id: SessionActivity(phase: .completed, message: message)]
+                sourcePath: sourcePath, internalKind: internalKind, parentThreadID: internalKind == nil ? nil : "fixture-main")
+            store.activities = [session.id: SessionActivity(phase: phase, message: message)]
             let host = NSHostingView(rootView: AgentConversation(connection: connection ?? .shared, session: session).environmentObject(store))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
                 styleMask: .borderless, backing: .buffered, defer: false)
@@ -114,8 +115,27 @@ import AppKit
         pump { connection.activeTurns["layout"] == nil }
         let stoppedHeight = try snapshot("interrupted", message: "", connection: connection, threadID: "layout")
         precondition(stoppedHeight < 360)
+        let log = folder.appendingPathComponent("history.jsonl")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var records = Data()
+        for (role, text) in [("user", "请检查音乐面板的底部间距。"), ("assistant", "已修正单行提示的高度计算，并收紧底部留白。"), ("user", "继续检查其他布局。") ] {
+            records.append(try JSONSerialization.data(withJSONObject: ["type": "response_item", "payload": ["type": "message", "role": role, "content": [["type": "text", "text": text]]]]))
+            records.append(10)
+        }
+        try records.write(to: log)
+        let readOnly = CodexConnection(executableOverride: FileManager.default.currentDirectoryPath + "/Tests/mock_codex_server.py",
+            preferences: UserDefaults(suiteName: "NislaHistoryPreview-" + UUID().uuidString)!)
+        readOnly.connect(); defer { readOnly.disconnect() }
+        pump { readOnly.connected }
+        AppLocalization.shared.selection = .simplifiedChinese
+        let historicalHeight = try snapshot("history-running-readonly", message: "Codex 正在处理任务", connection: readOnly,
+            threadID: "occupied-thread", sourcePath: log.path, phase: .running)
+        precondition(historicalHeight > short && historicalHeight < 620)
+        precondition(readOnly.threadErrors["occupied-thread"]?.contains("占用") == true)
+        precondition(readOnly.conversations["occupied-thread"] == nil, "Read-only history must not start or send a model turn")
         print("PASS: short/review/long conversation layouts are compact and bounded (\(Int(short))/\(Int(review))/\(Int(long)) pt); fixture data only")
         print("PASS: compact connected reply and interrupted states render in Chinese and English using a protocol fixture; no real Codex service")
         print("PASS: Markdown log and assistant reply render links, lists, bold, code and tables using fixture content; no links opened")
+        print("PASS: running/occupied conversation renders persisted history without creating live messages; local fixture log only")
     }
 }

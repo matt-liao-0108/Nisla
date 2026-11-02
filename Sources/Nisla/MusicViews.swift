@@ -7,6 +7,8 @@ struct MusicSettings: View {
         Form {
             Section(L10n.text("音乐读取与控制")) {
                 Toggle(L10n.text("启用音乐功能"), isOn: $music.enabled)
+                Text(L10n.text("如果系统灵动岛已满足音乐控制需求，可关闭此功能并隐藏音乐页，继续使用系统控制。"))
+                    .font(.caption).foregroundStyle(.secondary)
                 MusicSourcePicker()
                 Text(L10n.text("Apple Music 与 Spotify 使用应用脚本接口，首次访问时需要自动化授权。只读取播放信息；仅在点击控制按钮时改变播放，不会自动打开播放器或开始播放。")).font(.caption).foregroundStyle(.secondary)
                 Text(L10n.text("网易云音乐与 QQ 音乐通过内置系统“正在播放”组件连接，无需额外安装工具。请先在播放器中播放歌曲，并确认控制中心正在播放中能看到它。只能控制当前系统播放来源，不能强行切换后台播放器；此通道使用非公开接口，未来系统更新可能失效。")).font(.caption).foregroundStyle(.secondary)
@@ -34,6 +36,7 @@ struct MusicShelf: View {
     @ObservedObject private var localization = AppLocalization.shared
     @EnvironmentObject private var store: PinStore
     @ObservedObject private var music = MusicStore.shared
+    @State private var availableWidth: CGFloat = 0
     var body: some View {
         MusicDashboard(track: music.track, enabled: music.enabled, busy: music.busy,
                        status: music.status, remoteArtwork: music.remoteArtwork, selectedPlayer: $music.selectedPlayer,
@@ -41,6 +44,10 @@ struct MusicShelf: View {
                        open: { music.open($0) }, enable: { music.enabled = true }, refresh: { Task { await music.refresh() } },
                        showProgress: $store.musicShowsProgress,
                        outputVolume: music.outputVolume)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                availableWidth = width
+                updateGuidanceHeight()
+            }
             .onAppear(perform: updateGuidanceHeight)
             .onChange(of: music.status) { _, _ in updateGuidanceHeight() }
             .onChange(of: store.options.shelfWidth) { _, _ in updateGuidanceHeight() }
@@ -48,7 +55,9 @@ struct MusicShelf: View {
     }
 
     private func updateGuidanceHeight() {
-        let width = max(1, store.options.shelfWidth - 2 * ShelfGeometry.expandedContentInset - 16)
+        let panelContentWidth = availableWidth > 0 ? availableWidth
+            : store.options.shelfWidth - 2 * ShelfGeometry.expandedContentInset
+        let width = max(1, panelContentWidth - 16)
         let lines = MusicGuidanceLayout.lineCount(L10n.text(music.status), width: width)
         if store.musicGuidanceLines != lines { store.musicGuidanceLines = lines }
     }

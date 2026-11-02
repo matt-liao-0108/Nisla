@@ -106,6 +106,7 @@ import AppKit
         let preferences = UserDefaults(suiteName: "IslandHeadphoneTests-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: directory, preferences: preferences, interactive: false)
         let layout = PanelLayout()
+        store.options.presentationStyle = "notch"
         store.selectedTab = 2
         let output = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/HeadphonePreviews")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

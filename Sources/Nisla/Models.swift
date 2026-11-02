@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum PinKind: String, Codable, CaseIterable {
     case text, image, file, folder, link
@@ -41,6 +42,10 @@ struct PinItem: Identifiable, Codable, Hashable {
 
 enum ShelfGeometry {
     static let footerHeight: CGFloat = 42
+    static func bodyHeight(_ height: CGFloat, floating: Bool, selectedTab: Int) -> CGFloat {
+        guard floating else { return height }
+        return max(0, height - (selectedTab == 0 ? 32 : selectedTab == 1 ? 8 : 0))
+    }
     static func showsFooter(expanded: Bool, reveal: CGFloat) -> Bool { expanded && reveal > 0.6 }
     // Moderate clearance inside the 10–12 pt inward shoulders, without
     // spending the compact title's limited width on excessive padding.
@@ -72,6 +77,22 @@ enum ShelfGeometry {
 }
 
 struct IslandOptions: Codable, Equatable {
+    // Missing values in pre-0.2.48 preferences mean automatic, not a manual
+    // request for a floating capsule.
+    var presentationStyle: String? = nil
+    var presentationPolicyVersion: Int? = 1
+    var preferredPresentation: String {
+        ["automatic", "floating", "notch"].contains(presentationStyle ?? "automatic")
+            ? presentationStyle ?? "automatic" : "automatic"
+    }
+    var usesFloatingIsland: Bool { usesFloatingIsland(nativeSupport: NativeIslandCompatibility.current()) }
+    func usesFloatingIsland(nativeSupport: NativeIslandCompatibility.Support) -> Bool {
+        switch preferredPresentation {
+        case "floating": true
+        case "notch": false
+        default: nativeSupport == .verified
+        }
+    }
     // Optional so preferences written before feature visibility was added still decode.
     var hiddenTabs: [Int]? = nil
     var hudVolumeEnabled: Bool? = nil
@@ -114,12 +135,58 @@ struct IslandOptions: Codable, Equatable {
         var result = self
         result.shelfWidth = shelfWidth.isFinite ? min(960, max(440, shelfWidth)) : 580
         result.hoverDelay = hoverDelay.isFinite ? min(1, max(0.15, hoverDelay)) : 0.35
+        if let presentationStyle, !["automatic", "floating", "notch"].contains(presentationStyle) { result.presentationStyle = "automatic" }
+        if presentationPolicyVersion == nil {
+            // 0.2.48 could persist its globally forced floating default as a
+            // selection. Re-evaluate that once; later manual choices survive.
+            if presentationStyle == "floating" { result.presentationStyle = "automatic" }
+            result.presentationPolicyVersion = 1
+        }
         if !["automatic", "black", "glass"].contains(appearance) { result.appearance = "automatic" }
         if !["added", "used", "manual"].contains(sortOrder) { result.sortOrder = "added" }
         if ![0, 3, 6].contains(historyMonths) { result.historyMonths = 0 }
         result.dockPositions = dockPositions.filter { ["top", "left", "right"].contains($0.value) }
         return result
     }
+}
+
+enum NativeIslandCompatibility {
+    enum Support: Equatable { case unsupportedSystem, externalDisplay, unverifiedDevice, verified }
+
+    // SDK 26 has no public native-island capability API. Apple's model list
+    // does not yet identify PROLED devices, so no model is assumed supported.
+    // Add exact identifiers only after official verification; chip names and
+    // notch/safe-area geometry are not proof of native-island support.
+    static let verifiedModels: Set<String> = []
+    static let localModelIdentifier: String? = {
+        var length = 0
+        guard sysctlbyname("hw.model", nil, &length, nil, 0) == 0, length > 1, length < 256 else { return nil }
+        var bytes = [CChar](repeating: 0, count: length)
+        guard sysctlbyname("hw.model", &bytes, &length, nil, 0) == 0 else { return nil }
+        return String(decoding: bytes.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }()
+    static func detect(systemMajor: Int, modelIdentifier: String?, builtInDisplay: Bool,
+                       confirmedModels: Set<String> = verifiedModels) -> Support {
+        guard systemMajor >= 27 else { return .unsupportedSystem }
+        guard builtInDisplay else { return .externalDisplay }
+        guard let modelIdentifier, confirmedModels.contains(modelIdentifier) else { return .unverifiedDevice }
+        return .verified
+    }
+    static func current(builtInDisplay: Bool = true) -> Support {
+        detect(systemMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+            modelIdentifier: localModelIdentifier, builtInDisplay: builtInDisplay)
+    }
+}
+
+enum FloatingIslandGeometry {
+    static let headerHeight: CGFloat = 36
+    static let topGap: CGFloat = 8
+    static func frame(screen: CGRect, visible: CGRect, safeTop: CGFloat, size: CGSize) -> CGRect {
+        let width = min(max(1, size.width), max(1, screen.width - 32))
+        let top = min(visible.maxY, screen.maxY - max(0, safeTop)) - topGap
+        return CGRect(x: screen.midX - width / 2, y: top - size.height, width: width, height: size.height)
+    }
+    static func compactWidth(hasActivity: Bool) -> CGFloat { hasActivity ? 300 : 200 }
 }
 
 enum PinFilter: String, CaseIterable {

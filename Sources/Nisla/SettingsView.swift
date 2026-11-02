@@ -104,6 +104,30 @@ struct SettingsView: View {
                     Text(L10n.text("关闭后立即隐藏对应 Tab；至少保留一个页面。仅控制页面显示，不删除数据、不撤销授权，也不停止已连接的 Agent 任务。天气接入后也会出现在这里。")).font(.caption).foregroundStyle(.secondary)
                 }
                 Section(L10n.text("外观与布局")) {
+                    Picker(L10n.text("展示方式"), selection: Binding(
+                        get: { store.options.preferredPresentation },
+                        set: { selection in
+                            var options = store.options
+                            options.presentationStyle = selection
+                            options.presentationPolicyVersion = 1
+                            store.options = options
+                        }
+                    )) {
+                        Text(L10n.text("自动（检测系统与设备）")).tag("automatic")
+                        Text(L10n.text("悬浮胶囊")).tag("floating")
+                        Text(L10n.text("贴顶刘海")).tag("notch")
+                    }
+                    if store.options.preferredPresentation == "automatic" {
+                        if NativeIslandCompatibility.current() != .verified {
+                            Text(L10n.text(NativeIslandCompatibility.current() == .unsupportedSystem
+                                ? "当前系统不支持原生灵动岛，自动使用贴顶刘海。"
+                                : "尚无法确认此设备支持原生灵动岛，自动使用贴顶刘海；可手动选择悬浮胶囊。"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(L10n.text("自动模式仅在系统和设备支持均已确认时使用悬浮胶囊，否则保留贴顶刘海。手动悬浮是 Nisla 的自有外观，不代表启用系统原生灵动岛。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("悬浮模式与屏幕顶部安全区域保持间距，活动出现时伸缩，点击或悬停展开；按 Esc 或点击外部收起。音乐和系统提示可按需开启。")).font(.caption).foregroundStyle(.secondary)
                     ActivityColorSetting()
                     Button(L10n.text("恢复默认活动颜色")) { store.options.activityColorHex = nil }
                     Picker(L10n.text("材质"), selection: $store.options.appearance) {

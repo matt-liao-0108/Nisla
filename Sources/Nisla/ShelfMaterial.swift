@@ -100,9 +100,9 @@ final class ShelfNativeGlassView: NSView {
         // the final NotchOutline supplies the concave upper shoulders. Keep the
         // native lower optical radius aligned with the actual lower silhouette.
         let progress = min(1, max(0, reveal))
-        let radius = capsule ? bounds.height / 2 : 14 + 8 * progress
+        let radius = capsule ? bounds.height / 2 : shoulders ? 10 : min(bounds.height / 2, 18 + 10 * progress)
         let extensionHeight = !capsule && shoulders ? radius : 0
-        let sideInset = !capsule && shoulders ? min(10 + 2 * progress, bounds.width / 8, bounds.height / 3) : 0
+        let sideInset = !capsule && shoulders ? min(10, bounds.width / 8, bounds.height / 3) : 0
         CATransaction.begin(); CATransaction.setDisableActions(true)
         glass.cornerRadius = radius
         glass.frame = CGRect(x: sideInset, y: -extensionHeight,

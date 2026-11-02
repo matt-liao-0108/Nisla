@@ -4,6 +4,61 @@ import AppKit
 @main
 struct Checks {
     @MainActor static func main() throws {
+        precondition(IslandOptions().preferredPresentation == "automatic")
+        precondition(!IslandOptions().usesFloatingIsland(nativeSupport: .unsupportedSystem))
+        precondition(!IslandOptions().usesFloatingIsland(nativeSupport: .unverifiedDevice))
+        precondition(!IslandOptions().usesFloatingIsland(nativeSupport: .externalDisplay))
+        precondition(IslandOptions().usesFloatingIsland(nativeSupport: .verified))
+        var presentation = IslandOptions()
+        presentation.presentationStyle = "notch"
+        precondition(!presentation.validated().usesFloatingIsland)
+        presentation.presentationStyle = "unknown"
+        precondition(presentation.validated().presentationStyle == "automatic")
+        presentation.presentationStyle = "floating"
+        precondition(presentation.usesFloatingIsland(nativeSupport: .unsupportedSystem), "Manual floating remains an explicit choice")
+        let fixtureModels: Set<String> = ["FixtureNativeIsland"]
+        for (major, model, builtIn, expected): (Int, String?, Bool, NativeIslandCompatibility.Support) in [
+            (26, "FixtureNativeIsland", true, .unsupportedSystem),
+            (27, "FixtureNativeIsland", true, .verified),
+            (27, "FixtureNativeIsland", false, .externalDisplay),
+            (27, "Mac17,7", true, .unverifiedDevice),
+            (27, nil, true, .unverifiedDevice),
+            (99, "FutureUnknownMac", true, .unverifiedDevice)
+        ] {
+            precondition(NativeIslandCompatibility.detect(systemMajor: major, modelIdentifier: model,
+                builtInDisplay: builtIn, confirmedModels: fixtureModels) == expected)
+        }
+        var legacyPreferences = try JSONSerialization.jsonObject(with: JSONEncoder().encode(IslandOptions())) as! [String: Any]
+        legacyPreferences.removeValue(forKey: "presentationStyle")
+        legacyPreferences.removeValue(forKey: "presentationPolicyVersion")
+        let legacyPresentationOptions = try JSONDecoder().decode(IslandOptions.self, from: JSONSerialization.data(withJSONObject: legacyPreferences))
+        precondition(legacyPresentationOptions.preferredPresentation == "automatic")
+        precondition(!legacyPresentationOptions.usesFloatingIsland(nativeSupport: .unsupportedSystem), "Old preferences must not force the new floating appearance")
+        legacyPreferences["presentationStyle"] = "floating"
+        let forcedFloatingOptions = try JSONDecoder().decode(IslandOptions.self,
+            from: JSONSerialization.data(withJSONObject: legacyPreferences)).validated()
+        precondition(forcedFloatingOptions.preferredPresentation == "automatic" && forcedFloatingOptions.presentationPolicyVersion == 1,
+            "The 0.2.48 floating preference must migrate once to automatic")
+        var manualFloatingOptions = forcedFloatingOptions
+        manualFloatingOptions.presentationStyle = "floating"
+        let reloadedManualChoice = try JSONDecoder().decode(IslandOptions.self, from: JSONEncoder().encode(manualFloatingOptions)).validated()
+        precondition(reloadedManualChoice.preferredPresentation == "floating", "New explicit manual choices must persist after migration")
+        legacyPreferences["presentationStyle"] = "notch"
+        let oldNotchOptions = try JSONDecoder().decode(IslandOptions.self,
+            from: JSONSerialization.data(withJSONObject: legacyPreferences)).validated()
+        precondition(oldNotchOptions.preferredPresentation == "notch", "Preserve the old explicit attached style")
+        print("PASS: automatic detects OS/device/display conservatively, preserves explicit choices and migrates missing preferences")
+        for screen in [CGRect(x: 0, y: 0, width: 1440, height: 900), CGRect(x: -1920, y: 260, width: 1920, height: 1080)] {
+            for safeTop: CGFloat in [0, 32, 64] {
+                for size in [CGSize(width: 200, height: 36), CGSize(width: 300, height: 36), CGSize(width: 580, height: 386)] {
+                    let visible = screen.insetBy(dx: 0, dy: 32)
+                    let frame = FloatingIslandGeometry.frame(screen: screen, visible: visible, safeTop: safeTop, size: size)
+                    precondition(frame.midX == screen.midX && frame.maxY == min(visible.maxY, screen.maxY - safeTop) - 8)
+                    precondition(frame.minX >= screen.minX && frame.maxX <= screen.maxX)
+                }
+            }
+        }
+        print("PASS: floating island preference compatibility and top safe-area gap on primary/secondary screens")
         for reveal: CGFloat in [0, 0.2, 0.6, 0.9, 1] {
             precondition(!ShelfGeometry.showsFooter(expanded: false, reveal: reveal))
             precondition(ShelfGeometry.showsFooter(expanded: true, reveal: reveal) == (reveal > 0.6))
@@ -11,6 +66,20 @@ struct Checks {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("IslandChecks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let migrationDomain = "IslandPresentationMigration-" + UUID().uuidString
+        let migrationPreferences = UserDefaults(suiteName: migrationDomain)!
+        defer { migrationPreferences.removePersistentDomain(forName: migrationDomain) }
+        legacyPreferences["presentationStyle"] = "floating"
+        migrationPreferences.set(try JSONSerialization.data(withJSONObject: legacyPreferences), forKey: "options")
+        let migrationDirectory = directory.appendingPathComponent("Migration")
+        let migratedStore = PinStore(storageDirectory: migrationDirectory, preferences: migrationPreferences, interactive: false)
+        precondition(migratedStore.options.preferredPresentation == "automatic")
+        let persistedMigration = try JSONDecoder().decode(IslandOptions.self, from: migrationPreferences.data(forKey: "options")!)
+        precondition(persistedMigration.presentationPolicyVersion == 1 && persistedMigration.preferredPresentation == "automatic")
+        migratedStore.options.presentationStyle = "floating"
+        let restartedStore = PinStore(storageDirectory: migrationDirectory, preferences: migrationPreferences, interactive: false)
+        precondition(restartedStore.options.preferredPresentation == "floating", "An explicit choice after migration must survive relaunch")
+        print("PASS: real preference loading persists the one-time migration and preserves subsequent manual floating")
         let defaults = UserDefaults(suiteName: "IslandChecks-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: directory, preferences: defaults, interactive: false)
         store.selectedTab = 3

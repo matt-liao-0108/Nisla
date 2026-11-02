@@ -96,6 +96,21 @@ struct AgentConversation: View {
     @State private var draft = ""
     @State private var contentHeight: CGFloat = 60
     @State private var showRawReview = false
+    @State private var history: [ConversationHistoryMessage] = []
+    @State private var historyBefore: UInt64 = 0
+    @State private var historyFormat: ConversationHistoryReader.Format?
+    @State private var historyRevision: ConversationHistoryReader.Revision?
+    @State private var historyLoading = false
+    @State private var historyUnavailable = false
+    @State private var followLatest = true
+    private var historyPath: String? {
+        session.sourcePath ?? store.codexSessions.first(where: { $0.id == session.id })?.sourcePath
+            ?? store.pinnedSessions.first(where: { $0.id == session.id })?.sourcePath
+    }
+    private var live: [CodexChatEntry] { connection.conversations[session.id] ?? [] }
+    private var projection: ConversationHistoryMerge.Projection {
+        ConversationHistoryMerge.project(history: history, live: live.map { ($0.role == .user ? "user" : "assistant", $0.text) })
+    }
     private var message: String { connection.messages[session.id] ?? store.activities[session.id]?.message ?? L10n.text("暂无消息") }
     private var isInternal: Bool { session.internalKind != nil }
     private var isStopping: Bool { connection.stoppingThreads.contains(session.id) }
@@ -108,6 +123,7 @@ struct AgentConversation: View {
         if isStopping { return "正在停止…" }
         if connection.sendingThreads.contains(session.id) { return "发送中…" }
         if isRunning { return "正在处理" }
+        if let phase = store.activities[session.id]?.phase, phase == .running || phase == .waiting { return phase.title }
         if let last = connection.conversations[session.id]?.last, last.role == .assistant {
             switch last.state {
             case .interrupted: return "已中断"
@@ -137,8 +153,18 @@ struct AgentConversation: View {
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if !isInternal, let entries = connection.conversations[session.id], !entries.isEmpty {
-                        ForEach(entries) { entry in CodexChatRow(entry: entry, project: session.project) }
+                    if !isInternal && historyBefore > 0 {
+                        Button(L10n.text(historyLoading ? "正在读取历史…" : history.count >= 200 ? "已显示最近 200 条，请在 Codex 查看更早记录" : "加载更早的消息")) {
+                            followLatest = false
+                            Task { await loadHistory(older: true) }
+                        }.buttonStyle(.borderless).font(.caption).disabled(historyLoading || history.count >= 200)
+                    }
+                    if !isInternal && (!history.isEmpty || !live.isEmpty) {
+                        ForEach(Array(history.prefix(projection.historyCount))) { entry in
+                            CodexChatRow(entry: CodexChatEntry(role: entry.role == "user" ? .user : .assistant,
+                                text: entry.text, state: .complete), project: session.project)
+                        }
+                        ForEach(Array(live.dropFirst(projection.liveStart))) { entry in CodexChatRow(entry: entry, project: session.project) }
                     } else if let review = ReviewSummary.parse(message) {
                         Text(L10n.text("审查结果（只读）")).font(.caption).foregroundStyle(.secondary)
                         HStack {
@@ -158,18 +184,27 @@ struct AgentConversation: View {
                     if !isInternal {
                         ForEach(connection.requests.filter { $0.threadID == session.id }) { request in AgentRequestView(request: request) }
                     }
+                    if historyLoading && history.isEmpty { ProgressView().controlSize(.small) }
                     Color.clear.frame(height: 1).id("conversation-bottom")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { geometry in
                     Color.clear.preference(key: ConversationContentHeight.self, value: geometry.size.height)
                 })
+                .background(ConversationScrollObserver { atBottom in followLatest = atBottom })
             }.frame(height: min(220, max(30, contentHeight)))
                 .onPreferenceChange(ConversationContentHeight.self) { contentHeight = $0 }
                 .onAppear { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
-                .onChange(of: connection.conversations[session.id]?.last?.id) { _, _ in proxy.scrollTo("conversation-bottom", anchor: .bottom) }
-                .onChange(of: connection.conversations[session.id]?.last?.text.count) { _, _ in proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                .onChange(of: contentHeight) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
+                .onChange(of: connection.conversations[session.id]?.last?.text.count) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
+                .onChange(of: history.last?.id) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
+                if !followLatest {
+                    Button { followLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) } label: {
+                        Label(L10n.text("回到最新消息"), systemImage: "arrow.down")
+                    }.buttonStyle(.borderless).font(.caption)
+                }
             }
+            if historyUnavailable { Text(L10n.text("暂时无法读取本地历史，可在 Codex 中查看。" )).font(.caption).foregroundStyle(.secondary) }
             if store.activities[session.id]?.phase == .unknown {
                 Button(L10n.text("重新查找会话记录")) { store.refreshCodex() }
             }
@@ -227,6 +262,39 @@ struct AgentConversation: View {
         .onChange(of: connection.lastSendSucceeded) { _, success in
             if success && connection.lastSentThreadID == session.id && connection.lastSentText == draft { draft = "" }
         }
+        .task(id: historyPath) {
+            guard !isInternal, historyPath != nil else { return }
+            history = []; historyBefore = 0; historyRevision = nil; historyFormat = nil
+            await loadHistory(older: false)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                if !Task.isCancelled { await loadHistory(older: false) }
+            }
+        }
+    }
+
+    @MainActor private func loadHistory(older: Bool) async {
+        guard let path = historyPath, !historyLoading else { return }
+        historyLoading = true
+        defer { historyLoading = false }
+        let revision = await Task.detached(priority: .utility) { ConversationHistoryReader.revision(path: path) }.value
+        guard !Task.isCancelled, path == historyPath else { return }
+        if !older, revision != nil, revision == historyRevision { return }
+        let cursor = older ? historyBefore : nil
+        let format = older ? historyFormat : nil
+        let page = await Task.detached(priority: .utility) {
+            ConversationHistoryReader.page(path: path, before: cursor, format: format)
+        }.value
+        guard !Task.isCancelled, path == historyPath else { return }
+        historyUnavailable = page.unavailable
+        guard !page.unavailable else { return }
+        if !older, let previous = historyRevision, let revision, revision.size < previous.size { history = []; historyBefore = 0 }
+        let initial = historyRevision == nil || history.isEmpty
+        var merged = Dictionary(uniqueKeysWithValues: history.map { ($0.id, $0) })
+        for entry in page.messages { merged[entry.id] = entry }
+        history = Array(merged.values.sorted { $0.offset < $1.offset }.suffix(200))
+        if older || initial { historyBefore = page.before; historyFormat = page.format }
+        if !older { historyRevision = revision }
     }
 }
 

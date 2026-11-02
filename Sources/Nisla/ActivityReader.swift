@@ -44,7 +44,7 @@ enum ActivityReader {
                 case "task_started":
                     waitingCallID = nil
                     result.phase = .running
-                    result.message = "Codex 正在处理任务"
+                    if result.message == SessionActivity().message { result.message = "Codex 正在处理任务" }
                     result.startedAt = (row["timestamp"] as? String).flatMap { formatter.date(from: $0) }
                 case "task_complete":
                     waitingCallID = nil

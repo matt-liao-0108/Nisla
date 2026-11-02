@@ -24,6 +24,8 @@ import AppKit
             precondition(colors.first!.alpha == 1 && abs(colors.last!.alpha - 0.84) < 0.0001)
             backdrop.configure(reveal: 1, capsule: false, shoulders: false)
             backdrop.layoutSubtreeIfNeeded()
+            precondition(backdrop.glass.cornerRadius == 28, "Floating optics must align with the island silhouette")
+            backdrop.layoutSubtreeIfNeeded()
             precondition(backdrop.glass.frame.minX == 0 && backdrop.glass.frame.width == 580)
             precondition(backdrop.glass.frame.minY == 0 && backdrop.glass.frame.height == 186,
                 "Floating glass must have its own native top corners, not extend above the panel")

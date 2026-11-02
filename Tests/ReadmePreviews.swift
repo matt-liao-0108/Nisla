@@ -72,6 +72,7 @@ struct ReadmeDashboard: View {
         let preferences = UserDefaults(suiteName: "NislaReadme-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: fixture, preferences: preferences, interactive: false)
         store.options.appearance = "black"
+        store.options.presentationStyle = "notch"
         store.options.shelfWidth = 580
         store.options.arrivalSound = false
         store.keepOpen = true

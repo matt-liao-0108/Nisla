@@ -107,6 +107,7 @@ import AppKit
         defer { try? FileManager.default.removeItem(at: fixtureDirectory) }
         let store = PinStore(storageDirectory: fixtureDirectory,
             preferences: UserDefaults(suiteName: "IslandCodexLayout-" + UUID().uuidString)!, interactive: false)
+        store.options.presentationStyle = "notch"
         store.options.appearance = "black"; store.isExpanded = true; store.selectedTab = 1
         let layout = PanelLayout()
         for width in [440, 580] {

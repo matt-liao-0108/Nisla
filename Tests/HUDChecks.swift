@@ -139,6 +139,7 @@ import AppKit
         let defaults = UserDefaults(suiteName: "IslandHUDChecks-" + UUID().uuidString)!
         let store = PinStore(storageDirectory: directory, preferences: defaults, interactive: false)
         store.options.appearance = "black"
+        store.options.presentationStyle = "notch"
         let layout = PanelLayout()
         let output = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/HUDPreviews")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
