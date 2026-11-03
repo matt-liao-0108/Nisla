@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct AgentSettings: View {
+struct CodexSettings: View {
     @ObservedObject private var localization = AppLocalization.shared
     @ObservedObject var connection = CodexConnection.shared
     @State private var exporting = false
@@ -222,6 +222,25 @@ struct AgentConversation: View {
                     Button(connection.checkingThreads.contains(session.id) ? L10n.text("正在检查…") : L10n.text("重新检查会话")) { connection.follow(session.id) }
                         .disabled(connection.checkingThreads.contains(session.id))
                 }
+                HStack {
+                    Picker(L10n.text("模型"), selection: Binding(
+                        get: { connection.selectedModels[session.id] ?? "" },
+                        set: { connection.selectModel($0, for: session.id) }
+                    )) {
+                        Text(L10n.text("沿用会话模型")).tag("")
+                        ForEach(connection.models) { model in Text(model.name).tag(model.id) }
+                        if let selected = connection.selectedModels[session.id], !connection.models.contains(where: { $0.id == selected }) {
+                            Text(selected).tag(selected)
+                        }
+                    }
+                    .pickerStyle(.menu).labelsHidden().accessibilityLabel(L10n.text("模型"))
+                    .disabled(!canReply || isRunning || connection.sendingThreads.contains(session.id) || connection.loadingModels)
+                    Button { connection.refreshModels() } label: { Image(systemName: "arrow.clockwise") }
+                        .help(L10n.text("刷新可用模型")).disabled(connection.loadingModels)
+                }
+                if let error = connection.modelError { Text(L10n.text(error)).font(.caption).foregroundStyle(.orange) }
+                Text(L10n.text(isRunning ? "任务运行中，停止或完成后可切换模型" : "模型选择在下一次发送时生效"))
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                 ReplyEditor(text: $draft,
                             enabled: canReply,
                             canSend: canSend) {
@@ -302,10 +321,11 @@ struct CodexChatRow: View {
     @ObservedObject private var localization = AppLocalization.shared
     let entry: CodexChatEntry
     var project = ""
+    var agentName = "Codex"
     private var status: String {
         switch entry.state {
         case .sending: "发送中…"
-        case .waiting: "等待 Codex 回复…"
+        case .waiting: agentName == "Cursor" ? "等待 Cursor 回复…" : "等待 Codex 回复…"
         case .streaming: "正在回复…"
         case .complete: entry.role == .user ? "已发送" : "已完成"
         case .failed: entry.role == .user ? "发送失败，草稿已保留" : "未收到回复"
@@ -315,7 +335,7 @@ struct CodexChatRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(entry.role == .user ? L10n.text("你") : "Codex").fontWeight(.semibold)
+                Text(entry.role == .user ? L10n.text("你") : agentName).fontWeight(.semibold)
                 Spacer()
                 if [.sending, .waiting, .streaming].contains(entry.state) {
                     ProgressView().controlSize(.mini)

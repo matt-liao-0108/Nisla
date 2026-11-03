@@ -26,6 +26,12 @@ final class PinStore: ObservableObject {
         }
     }
     private(set) var previousTab = 0
+    @Published var agentProvider = "codex" {
+        didSet { preferences.set(agentProvider, forKey: "agentProvider"); dismissPreviews() }
+    }
+    @Published var cursorSessionCount = 0
+    @Published var cursorActiveTitle: String?
+    @Published var cursorWaiting = false
     @Published var showRecentSessions = false
     @Published var showInternalCodexSessions = false
     @Published var isExpanded = false {
@@ -130,6 +136,7 @@ final class PinStore: ObservableObject {
         if selectedTab == 3 { return ShelfGeometry.musicBodyHeight(hasTrack: musicHasTrack, showsProgress: musicShowsProgress, guidanceLines: musicGuidanceLines) }
         if selectedTab == 2 { return ShelfGeometry.calendarBodyHeight(weekRows: calendarWeekRows) }
         guard selectedTab == 1 else { return 154 }
+        if agentProvider == "cursor" { return max(200, ShelfGeometry.codexBodyHeight(sessionCount: cursorSessionCount)) }
         return ShelfGeometry.codexBodyHeight(sessionCount: visibleCodexSessions.count)
     }
     var visibleCodexSessions: [CodexSession] {
@@ -189,6 +196,7 @@ final class PinStore: ObservableObject {
         self.storageDirectory = storageDirectory
         self.preferences = preferences
         self.interactive = interactive
+        agentProvider = preferences.string(forKey: "agentProvider") == "cursor" ? "cursor" : "codex"
         if let data = preferences.data(forKey: "options"), let saved = try? decoder.decode(IslandOptions.self, from: data) {
             options = saved.validated()
             if options != saved { persistOptions() }

@@ -22,6 +22,7 @@ check Music "$island_root"/Sources/Nisla/{MusicStore,NowPlayingBridge}.swift "$i
 check Agent "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/AgentChecks.swift"
 check Interrupt "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/InterruptChecks.swift"
 check ConnectionRecovery "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection}.swift "$island_root/Tests/ConnectionRecoveryChecks.swift"
+check Cursor "$island_root"/Sources/Nisla/{Models,SessionPresentation,CodexConnection,CursorConnection}.swift "$island_root/Tests/CursorChecks.swift"
 check SessionPresentation "$island_root"/Sources/Nisla/{Models,SessionPresentation,ActivityReader,InlineTextEditor,Previews,PinStore}.swift "$island_root/Tests/SessionPresentationChecks.swift"
 check Calendar "$island_root/Sources/Nisla/CalendarStore.swift" "$island_root/Tests/CalendarChecks.swift"
 check Motion "$island_root/Sources/Nisla/IslandMotion.swift" "$island_root/Tests/MotionChecks.swift"
@@ -32,13 +33,13 @@ check LiveActivity "$island_root"/Sources/Nisla/{MusicStore,NowPlayingBridge,Liv
 for island_test in HUDChecks HeadphoneChecks ShelfCornerChecks PanelPreviewChecks SettingsNavigationChecks ConversationPreviewChecks InteractionChecks FloatingIslandChecks; do
     check "$island_test" "${island_sources[@]}" "$island_root/Tests/$island_test.swift"
 done
-island_test_summary='all 24 regression suites'
+island_test_summary='all 25 regression suites'
 if check NativePanel -D ISLAND_PANEL_PREVIEW "${island_sources[@]}" "$island_root/Sources/Nisla/NislaApp.swift" "$island_root/Tests/PanelFrameChecks.swift"; then
     :
 else
     island_native_result=$?
     if [[ "$island_native_result" != 77 ]]; then exit "$island_native_result"; fi
-    island_test_summary='23 regression suites; native-panel suite skipped (no WindowServer display)'
+    island_test_summary='24 regression suites; native-panel suite skipped (no WindowServer display)'
 fi
 for island_script in "$island_root"/scripts/*.sh; do bash -n "$island_script"; done
 plutil -lint "$island_root/Support/Info.plist" "$island_root/Support/MediaRemoteAdapter-Info.plist"

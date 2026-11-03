@@ -142,3 +142,9 @@ swift scripts/render-icon.swift .build/Nisla.iconset Support/Nisla.icns
 用户数据位于 `~/Library/Application Support/Island`，不在源码仓库内。不要把个人置顶内容、剪贴板历史、会话日志和账号凭据添加到测试夹具或公开 Issue。
 
 原来的应用可能仍名为 Island。安装调试版或发行版前先退出旧进程，避免同时运行相同 Bundle ID 的多个副本。
+
+## Cursor ACP
+
+`CursorConnection.swift` 实现 Cursor CLI `agent acp` 的 JSON-RPC stdio 连接，`CursorViews.swift` 提供连接配置、来源切换、会话和审批界面。与 Codex 独立握手、认证、取消和保存索引；只复用消息展示的数据结构，不把 Codex 服务端方法发送给 Cursor。
+
+`Tests/CursorChecks.swift` 与 `Tests/mock_cursor_acp.py` 使用隔离偏好和临时目录，覆盖认证、创建与恢复、分块流式输出、权限/问题/计划、取消、错误、断线、版本协商和缓存上限。不调用真实 Cursor CLI，不执行模型任务。`bash scripts/check.sh` 包含该专项检查。

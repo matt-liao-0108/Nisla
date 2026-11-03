@@ -104,7 +104,7 @@ struct ShelfTabBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: tab.symbol).font(.system(size: 12, weight: .medium))
-                        if selected { Text(L10n.text(tab.title)).font(.system(size: 11, weight: .semibold)).lineLimit(1).transition(.opacity) }
+                        if selected { Text(L10n.text(tab == .codex ? (store.agentProvider == "cursor" ? "Cursor" : "Codex") : tab.title)).font(.system(size: 11, weight: .semibold)).lineLimit(1).transition(.opacity) }
                     }
                     .foregroundStyle(selected ? .white : .white.opacity(hovered == tab.id ? 0.9 : 0.5))
                     .frame(width: selected ? 86 : 37, height: 28)

@@ -133,6 +133,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] sessions in self?.store.connectedCodexSessions = sessions }
             .store(in: &cancellables)
+        CursorConnection.shared.$sessions
+            .sink { [weak self] sessions in self?.store.cursorSessionCount = sessions.count }
+            .store(in: &cancellables)
+        Publishers.CombineLatest3(CursorConnection.shared.$activeSessionID, CursorConnection.shared.$sessions, CursorConnection.shared.$permissions)
+            .sink { [weak self] id, sessions, permissions in
+                self?.store.cursorActiveTitle = id.map { active in sessions.first(where: { $0.id == active })?.title ?? "Cursor" }
+                self?.store.cursorWaiting = !permissions.isEmpty
+            }.store(in: &cancellables)
         MusicStore.shared.$track.map { $0 != nil }.removeDuplicates()
             .sink { [weak self] available in self?.store.musicHasTrack = available }
             .store(in: &cancellables)
@@ -236,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: L10n.text("显示 / 隐藏 Nisla"), action: #selector(togglePanel), keyEquivalent: "i")
         menu.addItem(withTitle: L10n.text("收纳当前剪贴板"), action: #selector(pinClipboard), keyEquivalent: "p")
         menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.text("关于 Nisla"), action: #selector(openAbout), keyEquivalent: "")
         menu.addItem(withTitle: L10n.text("设置…"), action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: L10n.text("退出 Nisla"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
@@ -333,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SystemHUD.shared.stop()
         HeadphoneConnection.shared.stop()
         CodexConnection.shared.disconnect()
+        CursorConnection.shared.disconnect()
         hotKeys.forEach { UnregisterEventHotKey($0) }
         if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
     }
@@ -345,6 +355,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panels.forEach { if visible { $0.orderOut(nil) } else { $0.orderFrontRegardless() } }
     }
     @objc private func pinClipboard() { store.capturePasteboard() }
+    @objc private func openAbout() {
+        store.isExpanded = false
+        NislaAbout.show()
+    }
+
     @objc private func openSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 620), styleMask: [.titled, .closable], backing: .buffered, defer: false)

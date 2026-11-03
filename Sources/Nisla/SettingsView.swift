@@ -84,6 +84,14 @@ struct SettingsView: View {
 
     private var appearanceSettings: some View {
             Form {
+                Section(L10n.text("关于 Nisla")) {
+                    LabeledContent(L10n.text("版本"), value: NislaAbout.version)
+                    LabeledContent(L10n.text("构建号"), value: NislaAbout.build)
+                    Button(L10n.text("关于 Nisla…")) {
+                        store.isExpanded = false
+                        NislaAbout.show()
+                    }
+                }
                 Section(L10n.text("语言")) {
                     Picker(L10n.text("语言"), selection: $localization.selection) {
                         ForEach(AppLanguage.allCases) { language in

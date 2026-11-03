@@ -376,7 +376,7 @@ struct ShelfView: View {
                     if store.isExpanded {
                         let tab = ShelfTab(rawValue: store.selectedTab) ?? .pins
                         Image(systemName: tab.symbol).foregroundStyle(store.options.activityColor)
-                        Text(L10n.text(tab.title)).font(.system(size: 12, weight: .semibold))
+                        Text(L10n.text(tab == .codex ? (store.agentProvider == "cursor" ? "Cursor" : "Codex") : tab.title)).font(.system(size: 12, weight: .semibold))
                     } else if !isTargeted && compactActivity.kind != .idle {
                         CompactActivityLabel(activity: compactActivity, remoteArtwork: music.remoteArtwork, showTitle: true)
                     } else {
@@ -430,6 +430,14 @@ struct ShelfView: View {
     }
 
     private var compactActivity: CompactActivity {
+        if store.agentProvider == "cursor" {
+            var activity = CompactActivity.resolve(selectedTab: store.selectedTab,
+                codexVisible: store.options.isTabVisible(1), running: store.cursorActiveTitle == nil ? 0 : 1,
+                waiting: store.cursorWaiting ? 1 : 0, completed: false, codexTitle: store.cursorActiveTitle ?? "Cursor",
+                musicVisible: store.options.isTabVisible(3) && music.enabled, track: music.track)
+            activity.cursor = true
+            return activity
+        }
         let session = store.pinnedSessions.first { store.activities[$0.id]?.phase == .running || store.activities[$0.id]?.phase == .waiting }
         return CompactActivity.resolve(selectedTab: store.selectedTab,
             codexVisible: store.options.isTabVisible(1), running: store.activeCount, waiting: store.waitingCount,
@@ -448,7 +456,7 @@ struct ShelfView: View {
                 Button { store.query = ""; searchVisible = false } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help(L10n.text("关闭搜索"))
             } else if !floatingIsland {
-                Text(L10n.text(ShelfTab(rawValue: store.selectedTab)?.title ?? "收纳"))
+                Text(L10n.text(store.selectedTab == 1 ? (store.agentProvider == "cursor" ? "Cursor" : "Codex") : ShelfTab(rawValue: store.selectedTab)?.title ?? "收纳"))
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
             }
             Spacer()
@@ -480,7 +488,9 @@ struct ShelfView: View {
                         }
                     }
                 }
-                else if store.selectedTab == 1 { CodexView() }
+                else if store.selectedTab == 1 {
+                    if store.agentProvider == "cursor" { CursorShelf() } else { CodexView() }
+                }
                 else if store.selectedTab == 2 { CalendarShelf() }
                 else { MusicShelf() }
             }
@@ -979,7 +989,10 @@ private struct CodexView: View {
         VStack(spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(showAll ? L10n.text("最近会话") : L10n.text("已置顶会话")).font(.system(size: 12, weight: .semibold))
+                    HStack {
+                        AgentProviderPicker()
+                        Text(showAll ? L10n.text("最近会话") : L10n.text("已置顶会话")).font(.system(size: 12, weight: .semibold))
+                    }
                 }
                 Spacer()
                 Menu {

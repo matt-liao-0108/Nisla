@@ -78,6 +78,14 @@ import SwiftUI
         editor.setMarkedText("输入中的演示便签", selectedRange: NSRange(location: 8, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
         coordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: editor))
         precondition(!editor.hasMarkedText() && saved == "输入中的演示便签" && draft == saved)
+        store.previewOpen = true
+        let cursorDismissal = store.previewDismissal
+        store.agentProvider = "cursor"
+        precondition(!store.previewOpen && store.previewDismissal > cursorDismissal, "Provider changes must dismiss the previous preview")
+        store.selectedTab = 1
+        store.cursorSessionCount = 4
+        precondition(store.bodyHeight >= 200)
+        store.agentProvider = "codex"
         print("PASS: ending note editing commits remaining IME text before popover dismissal")
     }
     final class FlippedDocument: NSView { override var isFlipped: Bool { true } }

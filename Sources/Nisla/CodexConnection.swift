@@ -88,8 +88,54 @@ struct CodexChatEntry: Identifiable, Equatable {
     var state: State
 }
 
+struct CodexModel: Identifiable, Equatable {
+    let id: String
+    let name: String
+    static func parse(_ row: [String: Any]) -> Self? {
+        guard row["hidden"] as? Bool != true, let model = row["model"] as? String, !model.isEmpty else { return nil }
+        return Self(id: model, name: row["displayName"] as? String ?? model)
+    }
+}
+
 @MainActor final class CodexConnection: ObservableObject {
     static let shared = CodexConnection()
+    @Published private(set) var models: [CodexModel] = []
+    @Published private(set) var loadingModels = false
+    @Published private(set) var modelError: String?
+    @Published private(set) var selectedModels: [String: String] = [:]
+    func selectModel(_ model: String, for thread: String) {
+        guard connected, activeTurns[thread] == nil, !sendingThreads.contains(thread),
+              model.isEmpty || models.contains(where: { $0.id == model }) else { return }
+        selectedModels[thread] = model.isEmpty ? nil : model
+    }
+    func refreshModels() {
+        guard connected, !loadingModels else { return }
+        loadingModels = true; modelError = nil
+        loadModels(cursor: nil, collected: [], seen: [])
+    }
+    private func loadModels(cursor: String?, collected: [CodexModel], seen: Set<String>) {
+        var params: [String: Any] = ["limit": 100]
+        if let cursor { params["cursor"] = cursor }
+        request("model/list", parameters: params) { [weak self] result in
+            guard let self, self.connected else { return }
+            switch result {
+            case .failure:
+                self.loadingModels = false; self.modelError = "无法读取可用模型，请重试"
+            case .success(let value):
+                guard let rows = value["data"] as? [[String: Any]] else {
+                    self.loadingModels = false; self.modelError = "无法读取可用模型，请重试"; return
+                }
+                var combined = collected
+                for model in rows.compactMap(CodexModel.parse) where !combined.contains(where: { $0.id == model.id }) { combined.append(model) }
+                if let next = value["nextCursor"] as? String, !next.isEmpty {
+                    guard !seen.contains(next), seen.count < 100 else {
+                        self.loadingModels = false; self.modelError = "无法读取可用模型，请重试"; return
+                    }
+                    self.loadModels(cursor: next, collected: combined, seen: seen.union([next]))
+                } else { self.models = combined; self.loadingModels = false }
+            }
+        }
+    }
     @Published var connected = false
     @Published var status = "未连接：本地日志监控仍可使用"
     @Published var diagnostics: [String] = []
@@ -206,6 +252,7 @@ struct CodexChatEntry: Identifiable, Equatable {
                 self.status = mode == "direct" ? "已连接独立 Codex 服务（非桌面共享连接）" : "已连接 Codex 本地服务"
                 self.record("initialize 握手成功")
                 self.refresh()
+                self.refreshModels()
             case .failure(let error):
                 if error.localizedDescription == "连接写入失败，请重新连接" {
                     // A process may exit before the first write. Let its stderr
@@ -233,6 +280,7 @@ struct CodexChatEntry: Identifiable, Equatable {
     func disconnect() {
         generation = UUID()
         connected = false; connecting = false; sending = false
+        models = []; selectedModels = [:]; loadingModels = false; modelError = nil
         for thread in Array(conversations.keys) {
             for index in conversations[thread]!.indices {
                 if [.sending, .waiting, .streaming].contains(conversations[thread]![index].state) {
@@ -304,6 +352,10 @@ struct CodexChatEntry: Identifiable, Equatable {
 
     func send(_ text: String, to threadID: String) {
         guard connected, !sending, !stoppingThreads.contains(threadID), threadErrors[threadID] == nil, !checkingThreads.contains(threadID), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let chosenModel = selectedModels[threadID]
+        if activeTurns[threadID] == nil, let chosenModel, !models.contains(where: { $0.id == chosenModel }) {
+            modelError = "所选模型已不可用，请刷新并重新选择"; return
+        }
         sending = true; lastSendSucceeded = false
         sendingThreads.insert(threadID)
         stopErrors.removeValue(forKey: threadID)
@@ -345,7 +397,10 @@ struct CodexChatEntry: Identifiable, Equatable {
                 guard let self else { return }
                 switch result {
                 case .failure(let error): finish(.failure(error))
-                case .success: self.request("turn/start", parameters: ["threadId": threadID, "input": input], completion: finish)
+                case .success:
+                    var params: [String: Any] = ["threadId": threadID, "input": input]
+                    if let chosenModel { params["model"] = chosenModel }
+                    self.request("turn/start", parameters: params, completion: finish)
                 }
             }
         }

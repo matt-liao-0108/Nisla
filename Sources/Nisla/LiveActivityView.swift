@@ -11,6 +11,7 @@ struct CompactActivity {
     var waiting = false
     var completed = false
     var count = 0
+    var cursor = false
 
     static func resolve(selectedTab: Int, codexVisible: Bool, running: Int, waiting: Int,
                         completed: Bool, codexTitle: String, musicVisible: Bool, track: MusicTrack?) -> Self {
@@ -39,7 +40,9 @@ struct CompactActivityLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             Group {
-                if activity.kind == .codex { CodexApplicationIcon() }
+                if activity.kind == .codex {
+                    if activity.cursor { CursorApplicationIcon() } else { CodexApplicationIcon() }
+                }
                 else if let track = activity.track { MusicArtwork(track: track, remoteArtwork: remoteArtwork) }
                 else { Image(systemName: "tray").font(.system(size: 14)).foregroundStyle(.white) }
             }.frame(width: 23, height: 23).clipShape(RoundedRectangle(cornerRadius: 5))
@@ -69,7 +72,7 @@ struct CompactActivityIndicator: View {
                 Text("\(activity.count)").font(.system(size: 10, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(tint)
             }
         }.frame(minWidth: 24, minHeight: 23)
-        .accessibilityLabel(activity.waiting ? L10n.text("Codex 等待回答") : activity.kind == .codex ? L10n.text("Codex 活动状态") : activity.running ? L10n.text("音乐正在播放") : L10n.text("音乐已暂停"))
+        .accessibilityLabel(activity.waiting ? L10n.text(activity.cursor ? "Cursor 等待回答" : "Codex 等待回答") : activity.kind == .codex ? L10n.text(activity.cursor ? "Cursor 活动状态" : "Codex 活动状态") : activity.running ? L10n.text("音乐正在播放") : L10n.text("音乐已暂停"))
     }
 }
 
@@ -157,5 +160,13 @@ struct MusicArtwork: View {
             Color.white.opacity(0.09)
             Image(systemName: "music.note").resizable().scaledToFit().padding(7).foregroundStyle(.white.opacity(0.55))
         }
+    }
+}
+
+struct CursorApplicationIcon: View {
+    private static let installed: NSImage? = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.todesktop.230313mzl4w4u92").map { NSWorkspace.shared.icon(forFile: $0.path) }
+    var body: some View {
+        if let icon = Self.installed { Image(nsImage: icon).resizable().scaledToFit() }
+        else { Image(systemName: "cursorarrow").resizable().scaledToFit().padding(4).foregroundStyle(.white) }
     }
 }

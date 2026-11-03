@@ -1,6 +1,21 @@
-Nisla 0.2.55 · 本地测试分享版（原 Island）
+Nisla 0.2.56 · 本地测试分享版（原 Island）
 
 系统要求：macOS 14 或更新版本，支持 Apple 芯片和 Intel Mac。
+
+0.2.56 更新（构建号 58）
+- Codex 回复框新增模型选择，模型列表来自当前连接服务；下一次发送生效，运行中停止或完成后可切换。
+- 新增 Cursor CLI 的 ACP 接入：会话创建／恢复、流式回复、停止、权限确认、问题回答与计划审批；Agent 页可在 Codex 和 Cursor 之间切换。
+- 菜单栏 → 关于 Nisla，或设置 → 外观 → 关于 Nisla，可查看当前运行副本的版本号、构建号和路径。
+
+Cursor 使用：按 https://cursor.com/docs/cli/installation 安装支持 ACP 的 Cursor CLI，在终端运行 agent login。进入设置 → Agent → Cursor，配置可执行文件（通常为 ~/.local/bin/agent）、选择项目文件夹并连接。在 Agent 页选择 Cursor 后新建会话。只安装 Cursor 编辑器不足以连接；此功能不能接管编辑器里的现有聊天和任务。工具权限、问题和计划需要你手动确认。恢复历史依赖 CLI 的 session/load 支持。
+
+连接本身不会发送任务。关闭预览或切换 Agent 来源不会停止后台任务；请点击停止并等待服务端确认。Cursor 会话在 Nisla 中最多保留 16 个标识、标题与项目路径，每个会话内存缓存最近 32 条消息。移除本地记录不会删除 Cursor 的会话。断开连接会终止 Nisla 启动的 CLI 子进程，但不能将未确认的任务标记为已成功停止。
+
+已通过应用编译、隔离协议和相关界面检查；本机尚未安装 Cursor CLI，真实账号登录、模型任务和不同 CLI 版本兼容性仍需安装后验证。Codex 模型选择同样只完成编译与模拟协议验证。
+
+同名副本：搜索可能同时展示「应用程序」、开发构建和解压目录中的 Nisla。日常建议从 /Applications/Nisla.app 启动；关于窗口可以确认当前副本位置。更新前先从菜单栏退出旧版，再替换应用。
+
+English: This update adds Codex model selection, Cursor ACP sessions and About Nisla. Install Cursor CLI and run agent login, configure it in Settings → Agent → Cursor, then create a session on the Agent page. Existing Cursor editor chats cannot be taken over. Live authentication and tasks are not yet verified on this machine.
 
 0.2.55 更新（构建号 57）：收纳卡片支持悬停切换预览；Spotify 和 Apple Music 读取到随机播放已开启时显示高亮。实际鼠标切换及播放器状态同步仍需安装后验证。
 

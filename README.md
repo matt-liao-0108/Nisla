@@ -10,13 +10,28 @@
 <p align="center">
   <a href="https://github.com/matt-liao-0108/Nisla/releases">下载安装包</a> ·
   <a href="#在刘海中使用-codex">Codex 使用说明</a> ·
+  <a href="#cursor">Cursor 使用说明</a> ·
   <a href="#快速开始">从源码构建</a> ·
   <a href="https://github.com/matt-liao-0108/Nisla/issues">反馈问题</a>
 </p>
 
-Nisla 是一个原生 macOS 屏幕边缘收纳与实时活动工具。把文字、图片或文件拖到屏幕边缘，快速收纳；也可以在同一个面板里查看音乐、日历和 Codex 活动。
+Nisla 是一个原生 macOS 屏幕边缘收纳与实时活动工具。把文字、图片或文件拖到屏幕边缘，快速收纳；也可以在同一个面板里查看音乐、日历和 Codex / Cursor Agent 活动。
 
 项目仍处于测试阶段，欢迎反馈使用体验和兼容性问题。
+
+## 0.2.56 更新
+
+- **Codex 模型选择**：回复框旁可选择当前服务返回的模型，默认沿用会话模型；下一次发送时生效，运行中停止或完成后可切换。
+- **Cursor 接入**：在设置 → Agent 切换到 Cursor，配置支持 ACP 的 Cursor CLI 和项目文件夹；支持创建／恢复 Nisla 会话、流式回复、停止、权限确认、问题回答与计划审批。
+- **关于 Nisla**：菜单栏与设置 → 外观新增版本信息，展示当前运行副本的版本号、构建号与路径，方便区分不同位置的同名副本。
+- Agent 页可切换 Codex／Cursor，紧凑活动使用对应图标；切换来源时关闭旧预览，保留各自会话与运行状态。
+
+版本 `0.2.56`，构建号 `58`。Cursor 需要另外安装 CLI 并运行 `agent login`；不能接管 Cursor 编辑器中的现有聊天。已通过编译、隔离协议和相关界面检查，本机未安装 Cursor CLI，真实登录及模型任务尚未验证。详见 [发布说明](docs/releases/v0.2.56.md)。
+
+**English:** Version 0.2.56 (build 58) adds Codex model selection, Cursor CLI integration over ACP, and an About Nisla entry with the running app’s version, build, and location. Install an ACP-capable Cursor CLI and run `agent login` before connecting. Existing Cursor editor chats cannot be taken over. Live Cursor authentication and model tasks remain unverified on this machine.
+
+<details>
+<summary>历史版本更新</summary>
 
 ## 0.2.52 更新
 
@@ -63,6 +78,9 @@ Nisla 是一个原生 macOS 屏幕边缘收纳与实时活动工具。把文字�
 
 此版本为 Preview，构建号 `48`。停止逻辑与界面已通过协议模拟及原生布局检查，真实模型任务的中断仍需实机验证；其他限制见下方“当前限制”。
 
+
+</details>
+
 ## 功能
 
 - **随手收纳**：保存文字、图片、链接、文件和文件夹，支持便签、标签、搜索、收藏和预览。
@@ -70,9 +88,14 @@ Nisla 是一个原生 macOS 屏幕边缘收纳与实时活动工具。把文字�
 - **音乐控制**：展示封面和播放信息，支持 Apple Music、Spotify，以及系统“正在播放”中的网易云音乐和 QQ 音乐。
 - **日历与待办**：查看系统日历、订阅日历和提醒事项，快速切换日期。
 - **Codex 活动**：置顶本机会话、查看运行状态和本地聊天历史；可选连接本地 App Server 以回复、追加或停止当前连接的任务。
+- **Cursor Agent**：通过官方 ACP 连接 Cursor CLI，在 Nisla 中创建和恢复会话、查看流式回复、停止任务并处理权限、问题与计划确认；不能接管编辑器中的现有聊天。
 - **外观与布局**：默认自动检测，无法确认支持时使用贴顶，可手动选择悬浮胶囊；支持经典黑色和系统玻璃材质，在设置中调整宽度、功能页、停靠位置和快捷键。
 - **中英文切换**：默认跟随系统，也可在“设置 → 外观 → 语言”中选择简体中文或 English，切换立即生效。
 - **可选系统提示**：耳机连接提示、音量和亮度媒体键接管均由用户按需开启。
+
+### 查看版本与同名副本
+
+从菜单栏图标选择 **关于 Nisla**，或打开 **设置 → 外观 → 关于 Nisla**。版本号与构建号读取当前运行应用的包信息；关于窗口还显示应用路径。搜索出现多个 Nisla 时，可能是「应用程序」、解压目录或开发构建里的不同副本，建议日常从 `/Applications/Nisla.app` 启动。更新时先退出旧版，再替换「应用程序」中的应用；项目构建及解压目录的副本不会自动替换。
 
 ## 界面预览
 
@@ -168,6 +191,29 @@ GitHub 自动生成的 `Source code (zip)` 是源码，不是可直接运行的�
 在“设置 → Agent”选择 **现有本地服务（共享活动）**。已有服务使用默认控制 Socket 时留空；使用自定义 Socket 时填写该服务实际提供的路径，再点击“连接 / 重连”。Socket 是运行中服务的通信端点，不是应用或 CLI 路径；不要创建一个空文件冒充 Socket。
 
 如果提示 Socket 不存在、未监听或 CLI 不支持代理，可检查原服务，或主动点 **使用独立服务连接**。切换独立模式不会把桌面 Codex 正在执行的任务转交给 Nisla。服务的启动方式与命令参数随 Codex 版本变化，请以当前 CLI 的帮助和 [OpenAI 官方 App Server 文档](https://learn.chatgpt.com/docs/app-server)为准；独立服务使用默认 stdio 连接，任务结束以服务端事件确认为准。
+
+### Cursor
+
+在设置的 **Agent** 页切换到 **Cursor**：
+
+1. 按 [Cursor 官方文档](https://cursor.com/docs/cli/installation)安装支持 ACP 的 Cursor CLI，并在终端运行 `agent login`。只安装 Cursor 编辑器不能提供此接口。
+2. 设置 CLI 路径（通常为 `~/.local/bin/agent`），选择项目文件夹，点击 **连接 / 重连**。连接只完成握手和认证，不会自动发送任务。
+3. 在顶部 Agent 页的来源菜单选择 **Cursor**，点击 **新建会话**，再输入消息。回复实时显示；任务运行中可点击 **停止**，收到服务端结束确认后恢复输入。
+4. 工具权限、问题和计划需要手动确认。Nisla 仅提供本次允许／拒绝，不自动批准。历史记录会在支持 `session/load` 的 CLI 上恢复；若版本不兼容，请更新 CLI。
+
+此接入使用官方 [Cursor ACP](https://prod.cursor.com/docs/cli/acp)，管理在 Nisla 中创建的 CLI 会话，**不能接管 Cursor 桌面编辑器中的现有聊天和正在运行的任务**。一次处理一个 Cursor 轮次；运行中请先停止或等待完成，再切换会话发送。可切换查看 Codex，但切换来源或关闭预览不会停止后台任务。
+
+Nisla 在本机偏好中保留最多 16 个 Cursor 会话标识、标题与项目路径，不保存账号密钥；每个会话内存中缓存最近 32 条消息，每条最多 65,536 字符。移除记录只移除 Nisla 的索引，不删除 Cursor 的会话。恢复历史依赖 CLI 返回的内容，不保证与桌面编辑器同步。断开连接会终止 Nisla 启动的 CLI 子进程；未收到停止确认时不能视为任务已经成功停止。
+
+**验证范围**：已提供隔离的 ACP 模拟测试；本机尚未安装 Cursor CLI，因此真实账号登录、不同 CLI 版本和实际模型任务仍需验证。
+
+**English:** Install an ACP-capable Cursor CLI and run `agent login`. In Settings → Agent → Cursor, choose the executable and project folder, then connect. Select Cursor on the Agent page and create a session to chat, stream replies, stop tasks, or answer permission requests. This integration manages CLI sessions created by Nisla; it cannot take over existing Cursor editor chats. Up to 16 session descriptors are retained locally, with 32 messages per session cached only in memory. Restoring history requires `session/load` support. ACP behavior is tested against an isolated fixture; live Cursor authentication and tasks remain unverified on this machine.
+
+### Codex 模型选择
+
+连接成功后，回复框旁可选择服务返回的可用模型，默认“沿用会话模型”。选择只在下一次发送时生效；任务运行中仅可追加指令，停止或完成后才能切换模型。模型列表读取失败时可点击刷新，仍可沿用会话模型；不同会话的选择独立，断开连接后清空。服务端拒绝所选模型时显示发送失败，不会自动换成其他模型。
+
+Models are loaded from the connected Codex service. Keep Session Model is the default; a selected model applies on the next send. Switching is disabled during an active task. Selections are separate for each conversation and cleared on disconnect.
 
 ### 提示“会话被占用”怎么办
 
