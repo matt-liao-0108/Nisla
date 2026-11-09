@@ -10,6 +10,7 @@ enum LocalizationCatalog {
         "菜单栏避让中；点击展开": "Avoiding menu bar items; click to expand",
         "拖入文件展开延迟 %@ 秒": "File drag expansion delay %@ seconds",
         "悬浮模式与屏幕顶部安全区域保持间距，活动出现时伸缩；悬停轻微放大，点击展开，按 Esc 或点击外部收起。音乐和系统提示可按需开启。": "The floating island keeps a gap below the top safe area and resizes for activities. Hover to slightly enlarge; click to expand. Press Escape or click outside to collapse. Music and system alerts are optional.",
+        "展开面板，保留上次选择的标签": "Expand panel and keep the last selected tab",
         "关于 Nisla": "About Nisla",
         "关于 Nisla…": "About Nisla…",
         "版本": "Version",

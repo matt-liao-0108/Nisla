@@ -247,14 +247,13 @@ struct ShelfView: View {
         }
     }
 
-    private func openShelfFromClick(tab: Int? = nil) {
+    private func openShelfFromClick() {
         // A click is navigation, even if a drag destination missed its exit.
         completedDropAt = ProcessInfo.processInfo.systemUptime
         isTargeted = false
         dropHasFiles = false
         airDropTargeted = false
         store.cancelDropHover()
-        if let tab { store.selectedTab = tab }
         store.isExpanded = true
     }
 
@@ -274,7 +273,7 @@ struct ShelfView: View {
       } else {
         HStack(spacing: 0) {
           Button {
-              openShelfFromClick(tab: compactActivity.tab)
+              openShelfFromClick()
           } label: {
            HStack(spacing: 6) {
             if let reading = hud.reading, !isTargeted {
@@ -291,9 +290,9 @@ struct ShelfView: View {
             }
            }.frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: layout.headerHeight).contentShape(Rectangle())
-          }.buttonStyle(.plain).help(L10n.text("打开当前实时活动或收纳区"))
+          }.buttonStyle(.plain).help(L10n.text("展开面板，保留上次选择的标签"))
             .accessibilityLabel(hud.reading.map { L10n.text("\($0.kind == .volume ? L10n.text("音量") : L10n.text("亮度")) \($0.percentage)%") }
-                ?? L10n.text("打开\(compactActivity.kind == .music ? L10n.text("音乐") : compactActivity.kind == .codex ? L10n.text("Codex 活动") : L10n.text("收纳区"))"))
+                ?? L10n.text("展开面板，保留上次选择的标签"))
             .opacity(store.isExpanded && hud.reading == nil ? 0 : 1)
             .allowsHitTesting(!store.isExpanded && hud.reading == nil)
             .disabled(hud.reading != nil)
@@ -310,12 +309,12 @@ struct ShelfView: View {
                 SystemHUDTrailing(reading: reading).padding(.leading, 6).allowsHitTesting(false)
             } else if compactActivity.kind != .idle && !store.isExpanded && !isTargeted {
                 Button {
-                    openShelfFromClick(tab: compactActivity.tab)
+                    openShelfFromClick()
                 } label: {
                     CompactActivityIndicator(activity: compactActivity, tint: store.options.activityColor,
                         showCount: layout.compactPresentation == .full)
                         .frame(minWidth: layout.compactPresentation == .icons ? 24 : 40, minHeight: layout.headerHeight).contentShape(Rectangle())
-                }.buttonStyle(.plain).help(L10n.text("查看\(compactActivity.kind == .music ? L10n.text("音乐") : "Codex")活动"))
+                }.buttonStyle(.plain).help(L10n.text("展开面板，保留上次选择的标签"))
             } else {
             HStack(spacing: 5) {
                 Image(systemName: "square.stack").font(.system(size: 10))
@@ -363,7 +362,7 @@ struct ShelfView: View {
                     .buttonStyle(.plain).help(L10n.text("关闭搜索"))
             } else {
             Button {
-                if !store.isExpanded { openShelfFromClick(tab: compactActivity.tab) }
+                if !store.isExpanded { openShelfFromClick() }
             } label: {
                 HStack(spacing: 7) {
                     if store.isExpanded {
@@ -382,7 +381,7 @@ struct ShelfView: View {
                 .frame(height: layout.headerHeight).contentShape(Rectangle())
             }.buttonStyle(.plain)
                 .allowsHitTesting(!store.isExpanded)
-                .accessibilityLabel(L10n.text("打开当前实时活动或收纳区"))
+                .accessibilityLabel(L10n.text("展开面板，保留上次选择的标签"))
             }
             if store.isExpanded {
                 if let feedback = store.feedback {
@@ -401,14 +400,14 @@ struct ShelfView: View {
                     Image(systemName: "chevron.up").frame(width: 24, height: 24)
                 }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开或收起"))
             } else if isHovering {
-                Button { openShelfFromClick(tab: compactActivity.tab) } label: {
+                Button { openShelfFromClick() } label: {
                     Image(systemName: "chevron.down").frame(width: 24, height: 24)
                 }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开或收起"))
             } else if compactActivity.kind != .idle && !isTargeted {
-                Button { openShelfFromClick(tab: compactActivity.tab) } label: {
+                Button { openShelfFromClick() } label: {
                     CompactActivityIndicator(activity: compactActivity, tint: store.options.activityColor, showCount: true)
                         .frame(minWidth: 24, minHeight: layout.headerHeight)
-                }.buttonStyle(.plain).accessibilityLabel(L10n.text("打开当前实时活动或收纳区"))
+                }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开面板，保留上次选择的标签"))
             } else {
                 HStack(spacing: 4) {
                     Image(systemName: "square.stack").font(.system(size: 10))
