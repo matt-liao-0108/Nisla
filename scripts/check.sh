@@ -29,17 +29,18 @@ check Motion "$island_root/Sources/Nisla/IslandMotion.swift" "$island_root/Tests
 check Material "$island_root/Sources/Nisla/ShelfMaterial.swift" "$island_root/Tests/MaterialChecks.swift"
 check MenuBar "$island_root"/Sources/Nisla/{MenuBarAvoidance,IslandMotion}.swift "$island_root/Tests/MenuBarAvoidanceChecks.swift"
 check AirDrop "$island_root/Sources/Nisla/AirDropSharing.swift" "$island_root/Tests/AirDropChecks.swift"
+check WindowAlignment "$island_root"/Sources/Nisla/{MenuBarAvoidance,IslandMotion}.swift "$island_root/Tests/WindowAlignmentChecks.swift"
 check LiveActivity "$island_root"/Sources/Nisla/{MusicStore,NowPlayingBridge,LiveActivityView}.swift "$island_root/Tests/LiveActivityChecks.swift"
 for island_test in HUDChecks HeadphoneChecks ShelfCornerChecks PanelPreviewChecks SettingsNavigationChecks ConversationPreviewChecks InteractionChecks FloatingIslandChecks; do
     check "$island_test" "${island_sources[@]}" "$island_root/Tests/$island_test.swift"
 done
-island_test_summary='all 25 regression suites'
+island_test_summary='all 26 regression suites'
 if check NativePanel -D ISLAND_PANEL_PREVIEW "${island_sources[@]}" "$island_root/Sources/Nisla/NislaApp.swift" "$island_root/Tests/PanelFrameChecks.swift"; then
     :
 else
     island_native_result=$?
     if [[ "$island_native_result" != 77 ]]; then exit "$island_native_result"; fi
-    island_test_summary='24 regression suites; native-panel suite skipped (no WindowServer display)'
+    island_test_summary='25 regression suites; native-panel suite skipped (no WindowServer display)'
 fi
 for island_script in "$island_root"/scripts/*.sh; do bash -n "$island_script"; done
 plutil -lint "$island_root/Support/Info.plist" "$island_root/Support/MediaRemoteAdapter-Info.plist"

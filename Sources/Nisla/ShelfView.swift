@@ -55,7 +55,7 @@ struct ShelfView: View {
         .background(ShelfInteractionBoundary())
         .environment(\.locale, localization.locale)
         .onChange(of: showingOverlay) { _, showing in
-            if showing { collapseTask?.cancel(); dragExpandTask?.cancel() }
+            if showing { layout.surfaceHovered = false; collapseTask?.cancel(); dragExpandTask?.cancel() }
             else { scheduleCollapseIfNeeded() }
         }
         .onDrop(of: [.fileURL, .image, .text, .url], delegate: ShelfDropDelegate(
@@ -187,14 +187,7 @@ struct ShelfView: View {
             withAnimation(.easeOut(duration: 0.16)) { isHovering = inside }
             collapseTask?.cancel()
             if !inside && !layout.anchorHovered { suppressHoverUntilExit = false }
-            if inside && !isTargeted && !store.isExpanded && !suppressHoverUntilExit && hud.reading == nil {
-                collapseTask = Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(store.options.hoverDelay))
-                    guard !Task.isCancelled, !isTargeted, hud.reading == nil, headphones.reading == nil,
-                          !CalendarStore.shared.authorizationInProgress else { return }
-                    store.isExpanded = true
-                }
-            }
+            layout.surfaceHovered = inside
             if !inside { scheduleCollapseIfNeeded() }
         }
         .onChange(of: store.isExpanded) { old, expanded in
@@ -219,7 +212,7 @@ struct ShelfView: View {
         .onChange(of: store.keepOpen) { _, _ in scheduleCollapseIfNeeded() }
         .onChange(of: store.notice) { _, _ in scheduleCollapseIfNeeded() }
         .onChange(of: confirmSelection) { _, _ in scheduleCollapseIfNeeded() }
-        .onDisappear { collapseTask?.cancel(); dragExpandTask?.cancel(); dragReleaseTask?.cancel(); isTargeted = false; dropHasFiles = false; airDropTargeted = false }
+        .onDisappear { layout.surfaceHovered = false; collapseTask?.cancel(); dragExpandTask?.cancel(); dragReleaseTask?.cancel(); isTargeted = false; dropHasFiles = false; airDropTargeted = false }
         .onAppear {
             if let notice = store.notice { presentNotice(notice) }
         }
@@ -277,7 +270,7 @@ struct ShelfView: View {
         Button { openShelfFromClick() } label: {
             Color.clear.frame(maxWidth: .infinity).frame(height: layout.headerHeight).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(L10n.text("展开 Nisla；菜单栏空间不足时隐藏两侧内容"))
-          .help(L10n.text("菜单栏避让中；悬停或点击展开"))
+          .help(L10n.text("菜单栏避让中；点击展开"))
       } else {
         HStack(spacing: 0) {
           Button {

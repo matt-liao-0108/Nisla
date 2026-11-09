@@ -184,6 +184,18 @@ struct AgentConversation: View {
                     if !isInternal {
                         ForEach(connection.requests.filter { $0.threadID == session.id }) { request in AgentRequestView(request: request) }
                     }
+                    if !isInternal, isRunning || [.running, .waiting].contains(store.activities[session.id]?.phase ?? .unknown) {
+                        HStack(alignment: .top, spacing: 8) {
+                            ProgressView().controlSize(.mini)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L10n.text("Codex 正在工作")).font(.system(size: 11, weight: .semibold))
+                                Text(L10n.text(store.activities[session.id]?.progress ?? "正在处理任务，新的进展会显示在这里…"))
+                                    .font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            Spacer(minLength: 0)
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                    }
                     if historyLoading && history.isEmpty { ProgressView().controlSize(.small) }
                     Color.clear.frame(height: 1).id("conversation-bottom")
                 }
@@ -197,6 +209,7 @@ struct AgentConversation: View {
                 .onAppear { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
                 .onChange(of: contentHeight) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
                 .onChange(of: connection.conversations[session.id]?.last?.text.count) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
+                .onChange(of: store.activities[session.id]?.progress) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
                 .onChange(of: history.last?.id) { _, _ in if followLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
                 if !followLatest {
                     Button { followLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) } label: {

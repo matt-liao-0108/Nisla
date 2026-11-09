@@ -1,6 +1,22 @@
-Nisla 0.2.56 · 本地测试分享版（原 Island）
+Nisla 0.2.58 · 本地测试分享版（原 Island）
 
 系统要求：macOS 14 或更新版本，支持 Apple 芯片和 Intel Mac。
+
+0.2.58 更新（构建号 60）
+- 悬停在刘海或悬浮胶囊上时只轻微放大，点击后才展开；移开恢复原尺寸。
+- 文件拖入仍可自动展开；设置中的延迟改为“拖入文件展开延迟”。
+- 本包不包含耳机运动检测、协议探测或摄像头鼠标实验。
+- 已通过编译、文案和动效逻辑检查；实际桌面悬停效果仍需安装后验证。
+
+English: Version 0.2.58 (build 60) slightly enlarges the compact panel on hover and expands on click. File drag still expands automatically. Experimental motion and camera mouse tools are excluded. Live desktop behavior remains to be verified.
+
+0.2.57 更新（构建号 59）
+- 统一顶部窗口在动画每一帧和最终尺寸的取整规则，修复 AppKit 小数边界取整造成的半点中心抖动；适用于贴顶和悬浮模式。
+- 展开时长从 0.82 秒缩短为 0.70 秒，收起从 0.68 秒缩短为 0.58 秒，保留原有曲线。
+- Codex 聊天区新增工作进度，显示公开进展和工具调用状态；保留已有聊天，不展示内部推理、工具参数或输出。未连接服务时，也可从本地日志读取进度；没有新事件时显示等待提示。
+- 已通过隐藏原生窗口逐帧、动效、菜单栏避让和日志专项检查。真实桌面观感仍需安装后确认。
+
+English: Version 0.2.57 (build 59) fixes fractional-frame center jitter, shortens expansion/collapse to 0.70/0.58 seconds, and shows Codex work progress from public updates and local tool events while retaining chat history. Native hidden-window and fixture checks passed; live desktop appearance still needs confirmation.
 
 0.2.56 更新（构建号 58）
 - Codex 回复框新增模型选择，模型列表来自当前连接服务；下一次发送生效，运行中停止或完成后可切换。

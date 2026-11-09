@@ -416,6 +416,10 @@ final class IslandPanel: NSPanel {
                 MainActor.assumeIsolated { self?.restoreSettledGeometry() }
             })
         }
+        layout.hoverChanged = { [weak self] in
+            guard let self, !self.store.isExpanded else { return }
+            self.setExpanded(false)
+        }
         setExpanded(store.isExpanded)
         pointerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -535,7 +539,13 @@ final class IslandPanel: NSPanel {
             let musicActive = store.options.isTabVisible(3) && MusicStore.shared.enabled && MusicStore.shared.track != nil
             size.width = FloatingIslandGeometry.compactWidth(hasActivity: codexActive || musicActive)
         } else if floating, compactConnection { size.width = FloatingIslandGeometry.compactWidth(hasActivity: true) }
-        let newFrame: NSRect
+        let hoverFeedback = !expanded && dock == "top" && !hudVisible && !connectionVisible
+        if hoverFeedback && (layout.surfaceHovered || layout.anchorHovered) {
+            // Keep the same center/top anchor; do not grow into occupied menu items.
+            size.width += floating || presentation == .full ? 12 : 0
+            size.height += 3
+        }
+        var newFrame: NSRect
         if floating {
             newFrame = FloatingIslandGeometry.frame(screen: targetScreen.frame, visible: targetScreen.visibleFrame,
                 safeTop: targetScreen.safeAreaInsets.top, size: size)
@@ -544,6 +554,7 @@ final class IslandPanel: NSPanel {
                 size: size)
         }
         else { newFrame = NSRect(x: dock == "left" ? targetScreen.frame.minX : targetScreen.frame.maxX - size.width, y: targetScreen.visibleFrame.midY - size.height / 2, width: size.width, height: size.height) }
+        if dock == "top" { newFrame = MenuBarAvoidance.nativeTopFrame(newFrame) }
         if resizeTarget == newFrame {
             if resizeTask != nil || matchesFrame(newFrame) { return }
             applyFrame(newFrame)
@@ -566,7 +577,7 @@ final class IslandPanel: NSPanel {
             || (abs(newFrame.height - start.height) < 0.5 && newFrame.width > start.width + 0.5)
         let resizingContent = abs(start.width - newFrame.width) < 0.5
             && min(start.height, newFrame.height) > layout.headerHeight + 1
-        let duration = hudTransition ? IslandMotion.hudDuration(opening: opening)
+        let duration = hoverFeedback && max(start.height, newFrame.height) <= layout.headerHeight + 3.5 ? 0.14 : hudTransition ? IslandMotion.hudDuration(opening: opening)
             : headphoneTransition ? (opening ? 0.46 : 0.38)
             : IslandMotion.shelfDuration(opening: opening, resizingContent: resizingContent)
         resizeTask = Task { @MainActor [weak self] in
@@ -583,9 +594,10 @@ final class IslandPanel: NSPanel {
                 if dock == "top" {
                     let safeFrame = MenuBarAvoidance.frame(from: start, to: newFrame,
                         progress: progress, opening: opening, resizingContent: resizingContent,
-                        headphone: headphoneTransition, compactOnly: max(start.height, newFrame.height) <= layout.headerHeight + 0.5,
+                        headphone: headphoneTransition, compactOnly: max(start.height, newFrame.height) <= layout.headerHeight + 3.5,
                         hud: hudTransition)
-                    self.applyFrame(safeFrame)
+                    self.applyFrame(MenuBarAvoidance.nativeTopFrame(safeFrame,
+                        center: newFrame.midX, top: newFrame.maxY))
                     if progress == 1 { break }
                     try? await Task.sleep(for: .milliseconds(16))
                     continue
@@ -620,6 +632,8 @@ final class IslandPanel: NSPanel {
     @Published var headerHeight: CGFloat = 32
     @Published var dock = "top"
     @Published var compactPresentation = CompactPresentation.full
-    @Published var anchorHovered = false
+    var hoverChanged: (() -> Void)?
+    @Published var surfaceHovered = false { didSet { if oldValue != surfaceHovered { hoverChanged?() } } }
+    @Published var anchorHovered = false { didSet { if oldValue != anchorHovered { hoverChanged?() } } }
     @Published var attachedToMenuBar = true
 }

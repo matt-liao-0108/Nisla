@@ -220,6 +220,7 @@ enum ActivityPhase: String, Sendable {
 }
 
 struct SessionActivity: Sendable {
+    var progress: String? = nil
     var phase: ActivityPhase = .unknown
     var message = "暂无可读取的活动记录"
     var startedAt: Date?

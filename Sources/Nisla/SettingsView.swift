@@ -135,7 +135,7 @@ struct SettingsView: View {
                     }
                     Text(L10n.text("自动模式仅在系统和设备支持均已确认时使用悬浮胶囊，否则保留贴顶刘海。手动悬浮是 Nisla 的自有外观，不代表启用系统原生灵动岛。"))
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(L10n.text("悬浮模式与屏幕顶部安全区域保持间距，活动出现时伸缩，点击或悬停展开；按 Esc 或点击外部收起。音乐和系统提示可按需开启。")).font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("悬浮模式与屏幕顶部安全区域保持间距，活动出现时伸缩；悬停轻微放大，点击展开，按 Esc 或点击外部收起。音乐和系统提示可按需开启。")).font(.caption).foregroundStyle(.secondary)
                     ActivityColorSetting()
                     Button(L10n.text("恢复默认活动颜色")) { store.options.activityColorHex = nil }
                     Picker(L10n.text("材质"), selection: $store.options.appearance) {
@@ -153,7 +153,7 @@ struct SettingsView: View {
                     }
                     Text(L10n.text("宽度仅改变展开面板，不改变收起时的刘海条。预览后可直接收起，鼠标移出面板也会自动收起。")).font(.caption).foregroundStyle(.secondary)
                     Text(L10n.text("菜单栏避让仅调整收起条的左右翼，不移动整体位置：确认相邻菜单图标空间不足时先隐藏歌名，再只保留刘海本体，空间恢复后还原。无法读取位置或未授予辅助功能权限时保持正常宽度，此时不能保证自动避让；鼠标位置本身不触发收窄。已有辅助功能授权时仅读取菜单图标位置，不读取菜单文字、不申请录屏权限。展开、收起及临时提示均保持贴顶。")).font(.caption).foregroundStyle(.secondary)
-                    Slider(value: $store.options.hoverDelay, in: 0.15...1, step: 0.05) { Text(L10n.text("悬停展开延迟 \(String(format: "%.2f", store.options.hoverDelay)) 秒")) }
+                    Slider(value: $store.options.hoverDelay, in: 0.15...1, step: 0.05) { Text(L10n.text("拖入文件展开延迟 \(String(format: "%.2f", store.options.hoverDelay)) 秒")) }
                     Text(L10n.text("鼠标移出后再移入收起的刘海条即可测试；点击仍立即展开，移出后的收起延迟不受此项控制。")).font(.caption).foregroundStyle(.secondary)
                     Toggle(L10n.text("所有显示器显示"), isOn: $store.options.allDisplays)
                     Picker(L10n.text("显示器"), selection: $store.options.screenID) {

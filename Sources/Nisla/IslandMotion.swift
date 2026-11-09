@@ -3,7 +3,7 @@ import Foundation
 /// Shared deterministic timing for the native window's width and height.
 enum IslandMotion {
     static func shelfDuration(opening: Bool, resizingContent: Bool = false) -> Double {
-        resizingContent ? 0.32 : opening ? 0.82 : 0.68
+        resizingContent ? 0.32 : opening ? 0.70 : 0.58
     }
 
     static func hudDuration(opening: Bool) -> Double { opening ? 0.50 : 0.32 }

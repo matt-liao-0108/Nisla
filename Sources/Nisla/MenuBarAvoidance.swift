@@ -40,6 +40,19 @@ enum MenuBarAvoidance {
                width: size.width, height: size.height)
     }
 
+    /// AppKit expands fractional window edges to whole points. Rounding each
+    /// edge independently alternates the horizontal center by half a point.
+    /// Keep width parity compatible with one fixed half-point center so both
+    /// edges are integral throughout the animation, including its final frame.
+    static func nativeTopFrame(_ proposed: CGRect, center: CGFloat? = nil, top: CGFloat? = nil) -> CGRect {
+        let doubledCenter = ((center ?? proposed.midX) * 2).rounded()
+        let parity = abs(doubledCenter.truncatingRemainder(dividingBy: 2))
+        let width = max(parity == 0 ? 2 : 1, ((proposed.width - parity) / 2).rounded() * 2 + parity)
+        let height = max(1, proposed.height.rounded())
+        return CGRect(x: (doubledCenter - width) / 2,
+                      y: (top ?? proposed.maxY).rounded() - height, width: width, height: height)
+    }
+
     /// The upper edge stays attached to the screen throughout expansion and
     /// collapse. Avoidance changes compact wing width, never the vertical anchor.
     static func frame(from start: CGRect, to target: CGRect,

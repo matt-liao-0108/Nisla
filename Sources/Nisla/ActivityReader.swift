@@ -44,21 +44,35 @@ enum ActivityReader {
                 case "task_started":
                     waitingCallID = nil
                     result.phase = .running
+                    result.progress = nil
                     if result.message == SessionActivity().message { result.message = "Codex 正在处理任务" }
                     result.startedAt = (row["timestamp"] as? String).flatMap { formatter.date(from: $0) }
                 case "task_complete":
                     waitingCallID = nil
                     result.phase = .completed
+                    result.progress = nil
                     if let message = payload["last_agent_message"] as? String, !message.isEmpty { result.message = String(message.prefix(4000)) }
-                case "turn_aborted": waitingCallID = nil; result.phase = .interrupted; result.message = "本轮任务已中断"
+                case "turn_aborted": result.progress = nil; waitingCallID = nil; result.phase = .interrupted; result.message = "本轮任务已中断"
                 default: break
                 }
             }
             if row["type"] as? String == "response_item" {
                 if type == "message", payload["role"] as? String == "assistant",
+                   !["analysis", "summary"].contains(payload["channel"] as? String ?? ""),
                    let blocks = payload["content"] as? [[String: Any]] {
                     let text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
-                    if !text.isEmpty { result.message = String(text.prefix(4000)) }
+                    if !text.isEmpty {
+                        result.message = String(text.prefix(4000))
+                        if payload["channel"] as? String == "commentary" { result.progress = String(text.prefix(600)) }
+                    }
+                }
+                if ["function_call", "custom_tool_call"].contains(type), result.phase == .running,
+                   let name = payload["name"] as? String {
+                    // Show the operation, never command arguments, output or internal reasoning.
+                    result.progress = L10n.text("正在调用工具：\(String(name.prefix(100)))")
+                }
+                if ["function_call_output", "custom_tool_call_output"].contains(type), result.phase == .running {
+                    result.progress = "工具执行结束，继续处理中…"
                 }
                 if ["function_call", "custom_tool_call"].contains(type),
                    let name = payload["name"] as? String,

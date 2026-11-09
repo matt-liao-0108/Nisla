@@ -4,6 +4,12 @@ import Foundation
 /// is translated; filenames, notes, song titles and session content stay intact.
 enum LocalizationCatalog {
     static let english: [String: String] = [
+        "正在调用工具：%@": "Running tool: %@",
+        "工具执行结束，继续处理中…": "Tool finished; continuing…",
+        "正在处理任务，新的进展会显示在这里…": "Working on your task. New progress will appear here…",
+        "菜单栏避让中；点击展开": "Avoiding menu bar items; click to expand",
+        "拖入文件展开延迟 %@ 秒": "File drag expansion delay %@ seconds",
+        "悬浮模式与屏幕顶部安全区域保持间距，活动出现时伸缩；悬停轻微放大，点击展开，按 Esc 或点击外部收起。音乐和系统提示可按需开启。": "The floating island keeps a gap below the top safe area and resizes for activities. Hover to slightly enlarge; click to expand. Press Escape or click outside to collapse. Music and system alerts are optional.",
         "关于 Nisla": "About Nisla",
         "关于 Nisla…": "About Nisla…",
         "版本": "Version",

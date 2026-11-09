@@ -19,6 +19,26 @@ Nisla 是一个原生 macOS 屏幕边缘收纳与实时活动工具。把文字�
 
 项目仍处于测试阶段，欢迎反馈使用体验和兼容性问题。
 
+## 0.2.58 更新
+
+- **悬停轻微放大，点击才展开**：鼠标移入刘海或悬浮胶囊时只给出轻微放大反馈，不自动展示内容；移开恢复原尺寸。
+- 文件拖到面板上仍可自动展开；设置项改为“拖入文件展开延迟”，与普通鼠标悬停区分。
+- 包含 0.2.57 的窗口定位、动画速度和 Codex 工作进度改进；本包不包含耳机运动检测或摄像头鼠标实验。
+
+版本 `0.2.58`，构建号 `60`。Apple Silicon / Intel 双架构 Release 编译、ad-hoc 签名与压缩包完整性检查通过；文案及动效逻辑检查通过，实际桌面悬停效果仍需验证。详见 [发布说明](docs/releases/v0.2.58.md)。
+
+**English:** Version 0.2.58 (build 60) adds subtle hover enlargement and click-to-expand behavior. Dragging files over the panel still expands it automatically. Includes the 0.2.57 positioning, animation and Codex progress improvements. Experimental headphone motion and camera mouse tools are excluded. Live hover behavior remains to be verified.
+
+## 0.2.57 更新
+
+- 修复展开／收起时 AppKit 小数边界取整导致的轻微中心抖动，统一动画每一帧与最终尺寸的定位规则。
+- 展开加快至 **0.70 秒**，收起加快至 **0.58 秒**，保留原有曲线。
+- Codex 聊天区展示工作进度、公开进展和工具调用状态，保留聊天历史；未连接服务时也可从本地日志读取进度，不显示内部推理、工具参数或输出。
+
+版本 `0.2.57`，构建号 `59`。隐藏原生窗口逐帧、动效、菜单栏避让和日志专项检查通过；真实桌面观感仍需安装后确认。
+
+**English:** Version 0.2.57 (build 59) fixes fractional-frame center jitter, speeds up expansion/collapse to 0.70/0.58 seconds, and displays Codex work progress while preserving chat history. Internal reasoning and raw tool arguments/output are excluded. Live desktop appearance remains to be confirmed.
+
 ## 0.2.56 更新
 
 - **Codex 模型选择**：回复框旁可选择当前服务返回的模型，默认沿用会话模型；下一次发送时生效，运行中停止或完成后可切换。
@@ -141,7 +161,7 @@ GitHub 自动生成的 `Source code (zip)` 是源码，不是可直接运行的�
 | --- | --- |
 | 收纳内容 | 拖入面板，或按 `⌃⌘P` 添加剪贴板内容 |
 | 显示 / 隐藏 | `⌃⌘I` |
-| 展开 / 收起面板 | 点击或悬停展开；按 Esc 收起。点击外部关闭预览，未锁定时同时收起面板 |
+| 展开 / 收起面板 | 悬停仅轻微放大，点击展开；按 Esc 收起。点击外部关闭预览，未锁定时同时收起面板 |
 | 新建便签 | `⌃⌘N`，或点击收纳工具栏的编辑图标 |
 | 捕获选中内容 | 默认 `⇧⌘X`，需辅助功能授权 |
 | 搜索与整理 | 收纳工具栏的搜索、筛选和排序菜单 |
